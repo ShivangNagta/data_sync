@@ -1,0 +1,30 @@
+flowchart TB
+    subgraph Goroutines["Concurrent Workers"]
+        WatcherG["Goroutine 1: fsnotify listener"]
+        ScannerG["Goroutine 2: periodic full scan"]
+    end
+
+    SyncEngine["Sync Engine"]
+
+    subgraph StateMachine["File State Machine"]
+        Pending["pending_modify"]
+        InProgress["in_progress"]
+        Synced["synced"]
+        Failed["failed"]
+
+        Pending -->|"upload starts"| InProgress
+        InProgress -->|"upload succeeds"| Synced
+        InProgress -->|"upload fails"| Failed
+        Failed -->|"retry"| InProgress
+    end
+
+    subgraph SQLite["SQLite Database"]
+        LF["local_files<br/>id, path, size, mod_time, state"]
+        PO["pending_operations<br/>id, file_id, op_type, status"]
+    end
+
+    WatcherG -->|"event detected"| SyncEngine
+    ScannerG -->|"full scan result"| SyncEngine
+    SyncEngine -->|"record change"| PO
+    PO -->|"update state"| LF
+    LF -->|"state transitions"| StateMachine

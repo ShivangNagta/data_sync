@@ -1,0 +1,24 @@
+sequenceDiagram
+    participant FS as Local Filesystem
+    participant C as Client Daemon
+    participant S as Server
+    participant DB as Turso DB
+    participant R2 as Cloudflare R2
+
+    Note over FS,C: File changed locally
+    FS->>C: fsnotify event
+    C->>C: Insert pending_operation (status: pending)
+
+    Note over C,S: Sync initiated
+    C->>S: gRPC: SyncManifest
+    S->>DB: Query file versions
+
+    alt New file or modified file
+        S->>R2: Store chunks
+        S->>DB: Insert/update version
+        S-->>C: Sync plan (what to download)
+    end
+
+    C->>C: Download missing chunks
+    C->>C: Mark pending_operation (status: completed)
+    C->>C: local_files.state: pending_modify → synced

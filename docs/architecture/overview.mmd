@@ -1,0 +1,21 @@
+flowchart TB
+    subgraph Client["Client Daemon"]
+        Watcher["fsnotify"]
+        Scanner["Periodic Scanner"]
+        SyncEngine["Sync Engine"]
+        LocalDB["SQLite DB"]
+    end
+
+    subgraph Server["Go Sync Server"]
+        API["gRPC API"]
+    end
+
+    Turso["Turso Metadata DB"]
+    R2["Cloudflare R2"]
+
+    Watcher -->|"event"| SyncEngine
+    Scanner -->|"full scan"| SyncEngine
+    SyncEngine -->|"write state"| LocalDB
+    SyncEngine <-->|"gRPC"| API
+    API <-->|"metadata"| Turso
+    API <-->|"chunks"| R2

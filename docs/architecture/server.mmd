@@ -1,0 +1,10 @@
+flowchart TB
+    subgraph Server["Go Sync Server"]
+        API["gRPC API"]
+    end
+
+    Turso["Turso Metadata DB"]
+    R2["Cloudflare R2"]
+
+    API <-->|"metadata"| Turso
+    API <-->|"chunks"| R2
