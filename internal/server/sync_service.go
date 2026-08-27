@@ -2,10 +2,6 @@ package server
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/hex"
-	"fmt"
 	"io"
 
 	"google.golang.org/grpc/codes"
@@ -14,36 +10,25 @@ import (
 	"github.com/shivangnagta/data_sync/proto/sync"
 )
 
-// SyncService implements the gRPC SyncServiceServer interface.
-// It coordinates metadata (Turso) and bytes (R2).
-type SyncService struct {
+// SyncService is the gRPC transport (controller) layer.
+// It translates between proto messages and domain types, delegating
+// business logic to the application service. It stays thin.
+type Service struct {
 	sync.UnimplementedSyncServiceServer
-	devices  *DeviceRepository
-	files    *FileRepository
-	versions *VersionRepository
-	r2       *R2Client
+	app *SyncService
+	auth *AuthInterceptor
 }
 
-func NewSyncService(
-	devices *DeviceRepository,
-	files *FileRepository,
-	versions *VersionRepository,
-	r2 *R2Client,
-) *SyncService {
-	return &SyncService{
-		devices:  devices,
-		files:    files,
-		versions: versions,
-		r2:       r2,
-	}
+func NewService(app *SyncService, auth *AuthInterceptor) *Service {
+	return &Service{app: app, auth: auth}
 }
 
 // RegisterDevice creates a device and returns its ID + bearer token.
-func (s *SyncService) RegisterDevice(ctx context.Context, req *sync.RegisterDeviceRequest) (*sync.RegisterDeviceResponse, error) {
+func (s *Service) RegisterDevice(ctx context.Context, req *sync.RegisterDeviceRequest) (*sync.RegisterDeviceResponse, error) {
 	deviceID := newID()
 	token := newToken()
 
-	if err := s.devices.RegisterDevice(ctx, deviceID, req.Name, token); err != nil {
+	if err := s.app.RegisterDevice(ctx, req.Name, deviceID, token); err != nil {
 		return nil, status.Errorf(codes.Internal, "register device: %v", err)
 	}
 
@@ -53,55 +38,34 @@ func (s *SyncService) RegisterDevice(ctx context.Context, req *sync.RegisterDevi
 	}, nil
 }
 
-// GetSyncPlan compares the client's manifest against server state (Turso)
-// and returns what the client must upload, download, or delete.
-func (s *SyncService) GetSyncPlan(ctx context.Context, req *sync.GetSyncPlanRequest) (*sync.GetSyncPlanResponse, error) {
-	resp := &sync.GetSyncPlanResponse{}
-
-	// Build a lookup of what the client has: path -> FileState
-	clientFiles := make(map[string]*sync.FileState, len(req.LocalFiles))
+// GetSyncPlan delegates manifest comparison to the application layer.
+func (s *Service) GetSyncPlan(ctx context.Context, req *sync.GetSyncPlanRequest) (*sync.GetSyncPlanResponse, error) {
+	manifest := make(map[string]FileState, len(req.LocalFiles))
 	for _, f := range req.LocalFiles {
-		clientFiles[f.Path] = f
+		manifest[f.Path] = FileState{Path: f.Path, Size: f.Size, Hash: f.Hash}
 	}
 
-	for path, clientState := range clientFiles {
-		serverFile, exists, err := s.files.GetFileByPath(ctx, path)
-		if err != nil {
-			return nil, status.Errorf(codes.Internal, "get file: %v", err)
-		}
+	actions, err := s.app.ComputeSyncPlan(ctx, manifest)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "compute plan: %v", err)
+	}
 
-		// Server doesn't know this file -> client should upload it.
-		if !exists {
-			resp.Actions = append(resp.Actions, &sync.SyncAction{
-				Path:   path,
-				Action: sync.SyncAction_UPLOAD,
-			})
-			continue
-		}
-
-		// Compare content hash. If different, the server has a newer version
-		// than the client -> client should download.
-		head, hasVersion, err := s.versions.GetHeadVersion(ctx, serverFile.FileID)
-		if err != nil {
-			return nil, status.Errorf(codes.Internal, "get head version: %v", err)
-		}
-		if hasVersion && head.RootHash != clientState.Hash {
-			resp.Actions = append(resp.Actions, &sync.SyncAction{
-				Path:       path,
-				Action:     sync.SyncAction_DOWNLOAD,
-				VersionId:  head.VersionID,
-				Hash:       head.RootHash,
-				Size:       head.Size,
-			})
-		}
+	resp := &sync.GetSyncPlanResponse{}
+	for _, a := range actions {
+		resp.Actions = append(resp.Actions, &sync.SyncAction{
+			Path:      a.Path,
+			Action:    actionToProto(a.Action),
+			VersionId: a.VersionID,
+			Hash:      a.Hash,
+			Size:      a.Size,
+		})
 	}
 
 	return resp, nil
 }
 
-// UploadFile accepts a streamed file from a client and stores it in R2 +
-// records the new version in Turso. Currently uses last-writer-wins.
-func (s *SyncService) UploadFile(stream sync.SyncService_UploadFileServer) error {
+// UploadFile accepts a streamed file and delegates storage to the app layer.
+func (s *Service) UploadFile(stream sync.SyncService_UploadFileServer) error {
 	var meta *sync.UploadFileMeta
 	var data []byte
 
@@ -126,51 +90,14 @@ func (s *SyncService) UploadFile(stream sync.SyncService_UploadFileServer) error
 		return status.Error(codes.InvalidArgument, "missing upload metadata")
 	}
 
-	// Integrity check: verify the received bytes match the claimed hash.
-	if err := verifyHash(data, meta.Hash); err != nil {
-		return status.Errorf(codes.InvalidArgument, "hash mismatch: %v", err)
+	up, ok := UploaderFrom(stream.Context())
+	if !ok {
+		return status.Error(codes.Unauthenticated, "missing device identity")
 	}
 
-	foundFile, found, err := s.files.GetFileByPath(stream.Context(), meta.Path)
+	versionID, err := s.app.ApplyUpload(stream.Context(), meta.Path, data, meta.Hash, up)
 	if err != nil {
-		return status.Errorf(codes.Internal, "get file: %v", err)
-	}
-
-	var fileID, baseVersion string
-	if found {
-		fileID = foundFile.FileID
-		head, _, err := s.versions.GetHeadVersion(stream.Context(), fileID)
-		if err != nil {
-			return status.Errorf(codes.Internal, "get head: %v", err)
-		}
-		baseVersion = head.VersionID
-	} else {
-		fileID = newID()
-		if err := s.files.CreateFile(stream.Context(), fileID, meta.Path); err != nil {
-			return status.Errorf(codes.Internal, "create file: %v", err)
-		}
-	}
-
-	versionID := newID()
-
-	// Store bytes in R2, then record version in Turso.
-	if err := s.r2.Put(stream.Context(), fileID, versionID, data); err != nil {
-		return status.Errorf(codes.Internal, "store in r2: %v", err)
-	}
-
-	version := FileVersion{
-		VersionID:     versionID,
-		FileID:        fileID,
-		DeviceID:      "",
-		BaseVersionID: baseVersion,
-		Size:          int64(len(data)),
-		RootHash:      meta.Hash,
-	}
-	if err := s.versions.InsertVersion(stream.Context(), version); err != nil {
-		return status.Errorf(codes.Internal, "record version: %v", err)
-	}
-	if err := s.files.SetCurrentVersion(stream.Context(), fileID, versionID); err != nil {
-		return status.Errorf(codes.Internal, "set current version: %v", err)
+		return status.Errorf(codes.Internal, "apply upload: %v", err)
 	}
 
 	return stream.SendAndClose(&sync.UploadFileResponse{
@@ -180,36 +107,19 @@ func (s *SyncService) UploadFile(stream sync.SyncService_UploadFileServer) error
 }
 
 // DownloadFile streams a file's bytes back to the client.
-func (s *SyncService) DownloadFile(req *sync.DownloadFileRequest, stream sync.SyncService_DownloadFileServer) error {
-	file, found, err := s.files.GetFileByPath(stream.Context(), req.Path)
+func (s *Service) DownloadFile(req *sync.DownloadFileRequest, stream sync.SyncService_DownloadFileServer) error {
+	data, versionID, hash, size, err := s.app.FetchFile(stream.Context(), req.Path)
 	if err != nil {
-		return status.Errorf(codes.Internal, "get file: %v", err)
-	}
-	if !found {
-		return status.Errorf(codes.NotFound, "file not found: %s", req.Path)
+		return status.Errorf(codes.NotFound, "fetch file: %v", err)
 	}
 
-	head, hasVersion, err := s.versions.GetHeadVersion(stream.Context(), file.FileID)
-	if err != nil {
-		return status.Errorf(codes.Internal, "get head: %v", err)
-	}
-	if !hasVersion {
-		return status.Errorf(codes.NotFound, "no version for file: %s", req.Path)
-	}
-
-	data, err := s.r2.Get(stream.Context(), file.FileID, head.VersionID)
-	if err != nil {
-		return status.Errorf(codes.Internal, "get from r2: %v", err)
-	}
-
-	// Send metadata first, then stream the data in chunks.
 	if err := stream.Send(&sync.DownloadFileResponse{
 		Payload: &sync.DownloadFileResponse_Meta{
 			Meta: &sync.DownloadFileMeta{
 				Path:      req.Path,
-				VersionId: head.VersionID,
-				Size:      int64(len(data)),
-				Hash:      head.RootHash,
+				VersionId: versionID,
+				Size:      size,
+				Hash:      hash,
 			},
 		},
 	}); err != nil {
@@ -235,23 +145,15 @@ func (s *SyncService) DownloadFile(req *sync.DownloadFileRequest, stream sync.Sy
 	return nil
 }
 
-func newID() string {
-	b := make([]byte, 16)
-	rand.Read(b)
-	return hex.EncodeToString(b)
-}
-
-func newToken() string {
-	b := make([]byte, 32)
-	rand.Read(b)
-	return hex.EncodeToString(b)
-}
-
-func verifyHash(data []byte, claim string) error {
-	sum := sha256.Sum256(data)
-	actual := hex.EncodeToString(sum[:])
-	if actual != claim {
-		return fmt.Errorf("expected %s, got %s", claim, actual)
+func actionToProto(action string) sync.SyncAction_ActionType {
+	switch action {
+	case "upload":
+		return sync.SyncAction_UPLOAD
+	case "download":
+		return sync.SyncAction_DOWNLOAD
+	case "delete":
+		return sync.SyncAction_DELETE
+	default:
+		return sync.SyncAction_UPLOAD
 	}
-	return nil
 }
