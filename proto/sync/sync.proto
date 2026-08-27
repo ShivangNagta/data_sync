@@ -1,0 +1,86 @@
+syntax = "proto3";
+
+package sync;
+
+option go_package = "github.com/shivangnagta/data_sync/proto/sync";
+
+message FileState {
+  string path = 1;
+  int64  size = 2;
+  string hash = 3;
+}
+
+message RegisterDeviceRequest {
+  string name = 1;
+}
+
+message RegisterDeviceResponse {
+  string device_id = 1;
+  string token = 2;
+}
+
+message GetSyncPlanRequest {
+  repeated FileState local_files = 1;
+}
+
+message SyncAction {
+  string path = 1;
+  enum ActionType {
+    DOWNLOAD = 0;
+    UPLOAD = 1;
+    DELETE = 2;
+  }
+  ActionType action = 2;
+  string version_id = 3;
+  string hash = 4;
+  int64  size = 5;
+}
+
+message GetSyncPlanResponse {
+  repeated SyncAction actions = 1;
+}
+
+message UploadFileRequest {
+  oneof payload {
+    UploadFileMeta meta = 1;
+    bytes data = 2;
+  }
+}
+
+message UploadFileMeta {
+  string path = 1;
+  string base_version_id = 2;
+  int64  size = 3;
+  string hash = 4;
+}
+
+message UploadFileResponse {
+  bool accepted = 1;
+  string new_version_id = 2;
+  bool conflict = 3;
+}
+
+message DownloadFileRequest {
+  string path = 1;
+}
+
+message DownloadFileResponse {
+  oneof payload {
+    DownloadFileMeta meta = 1;
+    bytes data = 2;
+  }
+}
+
+message DownloadFileMeta {
+  string path = 1;
+  string version_id = 2;
+  int64  size = 3;
+  string hash = 4;
+}
+
+service SyncService {
+  rpc RegisterDevice(RegisterDeviceRequest) returns (RegisterDeviceResponse);
+  rpc GetSyncPlan(GetSyncPlanRequest) returns (GetSyncPlanResponse);
+  rpc UploadFile(stream UploadFileRequest) returns (UploadFileResponse);
+  rpc DownloadFile(DownloadFileRequest) returns (stream DownloadFileResponse);
+}
