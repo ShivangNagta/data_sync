@@ -18,6 +18,11 @@ type SyncService struct {
 	r2       *R2Client
 }
 
+// NewSyncService constructs the application (business) layer.
+func NewSyncService(files *FileRepository, versions *VersionRepository, devices *DeviceRepository, r2 *R2Client) *SyncService {
+	return &SyncService{files: files, versions: versions, devices: devices, r2: r2}
+}
+
 // SyncAction represents one directive in a sync plan.
 type SyncAction struct {
 	Path      string
