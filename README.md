@@ -51,6 +51,6 @@ flowchart TB
 
 - Whole-file transfer; chunked upload + resumable is deferred.
 - Last-writer-wins; proper conflict detection is deferred (metadata for it is already reserved).
-- **Deletions are not propagated** - the server never emits DELETE actions, and deleted local files are excluded from the manifest. Cross-device delete awaits a tombstone/op design.
+- **Deletions are not propagated** - the server never emits DELETE actions, and deleted local files are excluded from the manifest. Because the plan pulls every server file a client is missing, a locally deleted file is re-downloaded on the next pass. Cross-device delete awaits a tombstone/op design.
 - Watcher is top-level only; subdirectories are covered by the startup reconcile and are tracked in TODO for recursive watching.
 - gRPC calls are authenticated with per-device bearer tokens (server-side interceptor).

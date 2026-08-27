@@ -51,6 +51,28 @@ func (r *FileRepository) GetFileByPath(ctx context.Context, path string) (File, 
 	return f, true, nil
 }
 
+// ListAllFiles returns every logical file on the server.
+// Used by ComputeSyncPlan to find files a client doesn't have yet.
+func (r *FileRepository) ListAllFiles(ctx context.Context) ([]File, error) {
+	rows, err := r.db.QueryContext(ctx,
+		"SELECT file_id, path, COALESCE(current_version, '') FROM files",
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list all files: %w", err)
+	}
+	defer rows.Close()
+
+	var files []File
+	for rows.Next() {
+		var f File
+		if err := rows.Scan(&f.FileID, &f.Path, &f.CurrentVersion); err != nil {
+			return nil, fmt.Errorf("scan file: %w", err)
+		}
+		files = append(files, f)
+	}
+	return files, rows.Err()
+}
+
 // SetCurrentVersion advances the head of a file.
 func (r *FileRepository) SetCurrentVersion(ctx context.Context, fileID, versionID string) error {
 	_, err := r.db.ExecContext(ctx,

@@ -86,6 +86,35 @@ func (s *SyncService) ComputeSyncPlan(ctx context.Context, clientFiles map[strin
 		}
 	}
 
+	// Files the client doesn't know about yet (uploaded by other
+	// devices) must be downloaded. Without this, a new device only
+	// ever syncs files it already has locally and never receives
+	// files created on other devices.
+	serverFiles, err := s.files.ListAllFiles(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list server files: %w", err)
+	}
+	for _, sf := range serverFiles {
+		if _, known := clientFiles[sf.Path]; known {
+			continue
+		}
+		head, hasVersion, err := s.versions.GetHeadVersion(ctx, sf.FileID)
+		if err != nil {
+			return nil, fmt.Errorf("get head version: %w", err)
+		}
+		if !hasVersion {
+			// Orphaned files row with no content; nothing to pull.
+			continue
+		}
+		actions = append(actions, SyncAction{
+			Path:      sf.Path,
+			Action:    "download",
+			VersionID: head.VersionID,
+			Hash:      head.RootHash,
+			Size:      head.Size,
+		})
+	}
+
 	return actions, nil
 }
 
