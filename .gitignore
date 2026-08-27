@@ -5,3 +5,5 @@ main
 test_folder
 cmd/watcher_test/
 .env
+
+cmd/synctest/

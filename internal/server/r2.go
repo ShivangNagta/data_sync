@@ -21,6 +21,7 @@ type R2Client struct {
 
 func NewR2Client(endpoint, accessKey, secretKey, bucket string) (*R2Client, error) {
 	cfg, err := awsconfig.LoadDefaultConfig(context.Background(),
+		awsconfig.WithRegion("auto"),
 		awsconfig.WithCredentialsProvider(
 			credentials.NewStaticCredentialsProvider(accessKey, secretKey, ""),
 		),
