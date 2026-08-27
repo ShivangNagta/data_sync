@@ -6,7 +6,7 @@ import (
 	"log"
 
 	_ "modernc.org/sqlite"
-	"github.com/shivangnagta/data_sync/internal/storage"
+	"github.com/shivangnagta/data_sync/internal/client/storage"
 )
 
 func main() {

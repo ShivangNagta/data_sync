@@ -10,7 +10,7 @@ import (
 	"fmt"
 
 	"github.com/fsnotify/fsnotify"
-	"github.com/shivangnagta/data_sync/internal/storage"
+	"github.com/shivangnagta/data_sync/internal/client/storage"
 )
 
 
