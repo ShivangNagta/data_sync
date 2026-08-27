@@ -6,7 +6,9 @@ var CreateLocalFilesTable = `
 	CREATE TABLE IF NOT EXISTS local_files (
 		id INTEGER PRIMARY KEY,
 		path TEXT NOT NULL UNIQUE,
-		state TEXT NOT NULL
+		state TEXT NOT NULL,
+		size INTEGER NOT NULL DEFAULT 0,
+		hash TEXT NOT NULL DEFAULT ''
 	)
 `
 

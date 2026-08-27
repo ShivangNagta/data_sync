@@ -8,11 +8,11 @@ package client
 import (
 	"database/sql"
 	"fmt"
+	"path/filepath"
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/shivangnagta/data_sync/internal/client/storage"
 )
-
 
 // db : the database connection object
 // folder : the folder that needs to be watched
@@ -25,6 +25,11 @@ type Watcher struct {
 
 // creates a new Watcher object
 func NewWatcher(db *sql.DB, folder string) (*Watcher, error) {
+	abs, err := filepath.Abs(folder)
+	if err != nil {
+		return nil, fmt.Errorf("abs folder: %w", err)
+	}
+
 	fswatch, err := fsnotify.NewWatcher()
 	if err != nil {
 		return nil, fmt.Errorf("create watcher: %w", err)
@@ -32,7 +37,7 @@ func NewWatcher(db *sql.DB, folder string) (*Watcher, error) {
 
 	return &Watcher{
 		db:      db,
-		folder:  folder,
+		folder:  abs,
 		fswatch: fswatch,
 	}, nil
 }
@@ -59,7 +64,14 @@ func (w *Watcher) watchEvents() {
 			continue
 		}
 
-		err := storage.RecordChange(w.db, event.Name, opType)
+		rel, err := filepath.Rel(w.folder, event.Name)
+		if err != nil {
+			fmt.Printf("Error computing relative path: %v\n", err)
+			continue
+		}
+		rel = filepath.ToSlash(rel)
+
+		err = storage.RecordChange(w.db, w.folder, rel, opType)
 		if err != nil {
 			fmt.Printf("Error recording change: %v\n", err)
 		}

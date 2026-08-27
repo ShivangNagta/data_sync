@@ -1,61 +1,114 @@
 package main
 
 import (
+	"context"
 	"database/sql"
-	"fmt"
 	"log"
+	"os"
+	"path/filepath"
+	"strconv"
+	"time"
 
 	_ "modernc.org/sqlite"
+	"github.com/joho/godotenv"
+
+	"github.com/shivangnagta/data_sync/internal/client"
 	"github.com/shivangnagta/data_sync/internal/client/storage"
 )
 
 func main() {
-	db, err := sql.Open("sqlite", "./test.db")
+	_ = godotenv.Load()
+
+	// Local SQLite database for pending operations tracking.
+	db, err := sql.Open("sqlite", dbName())
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("open local db: %v", err)
 	}
 	defer db.Close()
 
-	// Create tables
-	_, err = db.Exec(storage.CreateLocalFilesTable)
-	if err != nil {
-		log.Fatal(err)
-	}
-	_, err = db.Exec(storage.CreatePendingOperationsTable)
-	if err != nil {
-		log.Fatal(err)
+	if err := migrate(db); err != nil {
+		log.Fatalf("migrate local db: %v", err)
 	}
 
-	// Test RecordChange
-	err = storage.RecordChange(db, "./test.txt", "create")
+	// Folder to sync (absolute).
+	folder, err := filepath.Abs(getenv("SYNC_FOLDER", "."))
 	if err != nil {
-		log.Fatal(err)
-	}
-	err = storage.RecordChange(db, "./test.txt", "modify")
-	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("resolve folder: %v", err)
 	}
 
-	// Test GetPendingOps
-	ops, err := storage.GetPendingOps(db)
+	// Connection + device registration/token persistence.
+	sc, err := client.NewSyncClient(client.ClientConfig{
+		Addr:      getenv("SYNC_ADDR", "localhost:54321"),
+		Name:      getenv("DEVICE_NAME", "default"),
+		TokenFile: getenv("SYNC_TOKEN_FILE", "./sync_token.json"),
+	})
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("client: %v", err)
 	}
-	fmt.Printf("Pending ops: %d\n", len(ops))
-	for _, op := range ops {
-		fmt.Printf("  [%d] %s %s\n", op.ID, op.OpType, op.Path)
+	defer sc.Close()
+	log.Printf("device registered: %s", sc.DeviceID)
+
+	engine := client.NewSyncEngine(sc, db)
+
+	// Reconcile disk vs DB at startup to catch anything fsnotify missed
+	// (offline edits, deletions without events, files created while stopped).
+	// This is the rare full-scan safety net; the steady-state path is DB-driven.
+	if err := client.Reconcile(db, folder); err != nil {
+		log.Printf("reconcile failed: %v", err)
+	} else {
+		log.Printf("reconcile done")
 	}
 
-	// Test MarkOpCompleted
-	err = storage.MarkOpCompleted(db, 1)
+	// Set up the filesystem watcher so local edits are recorded.
+	w, err := client.NewWatcher(db, folder)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("watcher: %v", err)
+	}
+	if err := w.Start(); err != nil {
+		log.Fatalf("start watcher: %v", err)
 	}
 
-	// Verify
-	ops, err = storage.GetPendingOps(db)
-	if err != nil {
-		log.Fatal(err)
+	// Initial sync on startup.
+	ctx := context.Background()
+	if err := engine.Sync(ctx, folder); err != nil {
+		log.Printf("initial sync failed: %v", err)
 	}
-	fmt.Printf("Pending ops after completion: %d\n", len(ops))
+
+	// Sync periodically so changes from other devices propagate.
+	interval := time.Duration(getDuration(getenv("SYNC_INTERVAL", "30"))) * time.Second
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		if err := engine.Sync(ctx, folder); err != nil {
+			log.Printf("sync failed: %v", err)
+		}
+	}
+}
+
+func migrate(db *sql.DB) error {
+	if _, err := db.Exec(storage.CreateLocalFilesTable); err != nil {
+		return err
+	}
+	_, err := db.Exec(storage.CreatePendingOperationsTable)
+	return err
+}
+
+func dbName() string {
+	if v := os.Getenv("SYNC_DB"); v != "" {
+		return v
+	}
+	return "./test.db"
+}
+
+func getenv(k, def string) string {
+	if v := os.Getenv(k); v != "" {
+		return v
+	}
+	return def
+}
+
+func getDuration(s string) int {
+	n, _ := strconv.ParseInt(s, 10, 64)
+	return int(n)
 }
