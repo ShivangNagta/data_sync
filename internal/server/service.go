@@ -62,13 +62,20 @@ func (s *SyncService) ComputeSyncPlan(ctx context.Context, clientFiles map[strin
 			continue
 		}
 
-		// Compare content hash. If different, the server's head is
-		// ahead of the client -> client should download.
+		// If the server has a file but no version yet (e.g. an interrupted or
+		// orphaned upload), the client must upload to give it content.
 		head, hasVersion, err := s.versions.GetHeadVersion(ctx, serverFile.FileID)
 		if err != nil {
 			return nil, fmt.Errorf("get head version: %w", err)
 		}
-		if hasVersion && head.RootHash != clientState.Hash {
+		if !hasVersion {
+			actions = append(actions, SyncAction{Path: path, Action: "upload"})
+			continue
+		}
+
+		// Compare content hash. If different, the server's head is
+		// ahead of the client -> client should download.
+		if head.RootHash != clientState.Hash {
 			actions = append(actions, SyncAction{
 				Path:      path,
 				Action:    "download",
