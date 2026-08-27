@@ -1,2 +1,2 @@
 flowchart TB
-    DEV["devices<br/><br/>device_id: TEXT PRIMARY KEY<br/>name: TEXT NOT NULL<br/>token: TEXT NOT NULL<br/>last_seen: DATETIME"]
+    DEV["devices<br/><br/>device_id: TEXT PRIMARY KEY<br/>name: TEXT NOT NULL<br/>token: TEXT NOT NULL<br/>last_seen: DATETIME<br/><br/>token is the bearer token the client presents;<br/>resolved back to device_id by AuthInterceptor"]

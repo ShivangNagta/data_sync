@@ -1,24 +1,31 @@
 sequenceDiagram
     participant FS as Local Filesystem
     participant C as Client Daemon
-    participant S as Server
+    participant S as Go Sync Server
     participant DB as Turso DB
     participant R2 as Cloudflare R2
 
-    Note over FS,C: File changed locally
-    FS->>C: fsnotify event
-    C->>C: Insert pending_operation (status: pending)
+    Note over FS,C: Local change detected
+    FS->>C: fsnotify event or reconcile output
+    C->>C: RecordChange: upsert local_files and insert pending_operations
 
-    Note over C,S: Sync initiated
-    C->>S: gRPC: SyncManifest
-    S->>DB: Query file versions
+    Note over C,S: Periodic sync pass
+    C->>C: buildManifest from local_files, rehash pending only
+    C->>S: GetSyncPlan(local manifest)
+    S->>DB: query files by path and head versions
+    S-->>C: sync plan with UPLOAD and DOWNLOAD actions
 
-    alt New file or modified file
-        S->>R2: Store chunks
-        S->>DB: Insert/update version
-        S-->>C: Sync plan (what to download)
+    alt UPLOAD
+        C->>S: UploadFile stream with meta and whole file bytes
+        S->>R2: put uploads/file_id/version_id
+        S->>DB: insert file_versions and set current_version
+        S-->>C: UploadFileResponse
+    else DOWNLOAD
+        C->>S: DownloadFile(path)
+        S->>R2: get head version bytes
+        S-->>C: DownloadFileResponse with meta and data frames
+        C->>C: write temp file then atomic rename
     end
 
-    C->>C: Download missing chunks
-    C->>C: Mark pending_operation (status: completed)
-    C->>C: local_files.state: pending_modify → synced
+    Note over C: Pending local edits always upload, never download
+    C->>C: MarkAllCompleted

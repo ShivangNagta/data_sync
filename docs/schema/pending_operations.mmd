@@ -1,2 +1,2 @@
 flowchart TB
-    PO["pending_operations<br/><br/>id: INTEGER PRIMARY KEY<br/>file_id: INTEGER NOT NULL<br/>op_type: TEXT NOT NULL<br/>status: TEXT NOT NULL<br/>created_at: DATETIME"]
+    PO["pending_operations<br/><br/>id: INTEGER PRIMARY KEY<br/>file_id: INTEGER NOT NULL<br/>op_type: TEXT NOT NULL (create/modify/delete)<br/>status: TEXT NOT NULL (pending/completed)<br/><br/>op_type delete clears the file's size/hash;<br/>pending ops marked completed in bulk after a<br/>successful sync pass (MarkAllCompleted)"]

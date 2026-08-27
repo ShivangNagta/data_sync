@@ -1,2 +1,2 @@
 flowchart TB
-    FV["file_versions<br/><br/>version_id: TEXT PRIMARY KEY<br/>file_id: TEXT NOT NULL<br/>device_id: TEXT NOT NULL<br/>base_version_id: TEXT<br/>size: INTEGER NOT NULL<br/>root_hash: TEXT NOT NULL<br/>created_at: DATETIME"]
+    FV["file_versions<br/><br/>version_id: TEXT PRIMARY KEY<br/>file_id: TEXT NOT NULL<br/>device_id: TEXT NOT NULL<br/>base_version_id: TEXT<br/>size: INTEGER NOT NULL<br/>root_hash: TEXT NOT NULL<br/>created_at: DATETIME DEFAULT CURRENT_TIMESTAMP<br/><br/>FK (file_id) -> files(file_id)<br/>FK (device_id) -> devices(device_id)<br/>base_version_id = '' for the first version of a file<br/>index: idx_fv_file_id ON (file_id)<br/>(head-version lookup on every poll)"]

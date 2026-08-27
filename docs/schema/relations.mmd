@@ -11,10 +11,13 @@ flowchart LR
         CON["conflicts"]
     end
 
-    PO -->|"file_id references local_files.id"| LF
+    PO -->|"file_id REFERENCES local_files(id)"| LF
 
-    FV -->|"file_id references files.file_id"| F
-    FV -->|"device_id references devices.device_id"| DEV
-    FV -->|"base_version_id references file_versions.version_id"| FV
-    CON -->|"file_id references files.file_id"| F
-    CON -->|"version_a/version_b reference file_versions.version_id"| FV
+    FV -->|"file_id REFERENCES files(file_id)"| F
+    FV -->|"device_id REFERENCES devices(device_id)"| DEV
+    FV -->|"base_version_id -> file_versions.version_id (self-ref, '' for first)"| FV
+    CON -->|"file_id REFERENCES files(file_id)"| F
+    CON -.->|"unused in MVP"| FV
+
+    R2["Cloudflare R2: uploads/<file_id>/<version_id>"]
+    FV -.->|"bytes keyed by (file_id, version_id)"| R2

@@ -1,30 +1,19 @@
 flowchart TB
-    subgraph Goroutines["Concurrent Workers"]
-        WatcherG["Goroutine 1: fsnotify listener"]
-        ScannerG["Goroutine 2: periodic full scan"]
+    subgraph Client["Client Daemon (single process)"]
+        WatcherG["fsnotify watcher<br/>(top-level dir only; event -> RecordChange)"]
+        SyncG["Sync loop<br/>(ticker: buildManifest -> GetSyncPlan -> execute)"]
+        ReconcileG["Startup reconcile<br/>(one-shot: recursive disk walk, hash vs DB)"]
     end
 
-    SyncEngine["Sync Engine"]
-
-    subgraph StateMachine["File State Machine"]
-        Pending["pending_modify"]
-        InProgress["in_progress"]
-        Synced["synced"]
-        Failed["failed"]
-
-        Pending -->|"upload starts"| InProgress
-        InProgress -->|"upload succeeds"| Synced
-        InProgress -->|"upload fails"| Failed
-        Failed -->|"retry"| InProgress
-    end
-
-    subgraph SQLite["SQLite Database"]
-        LF["local_files<br/>id, path, size, mod_time, state"]
+    subgraph DB["SQLite Database"]
+        LF["local_files<br/>id, path (slash-rel), state,<br/>size, hash (SHA-256)"]
         PO["pending_operations<br/>id, file_id, op_type, status"]
     end
 
-    WatcherG -->|"event detected"| SyncEngine
-    ScannerG -->|"full scan result"| SyncEngine
-    SyncEngine -->|"record change"| PO
-    PO -->|"update state"| LF
-    LF -->|"state transitions"| StateMachine
+    WatcherG -->|"create/modify/delete op"| DB
+    ReconcileG -->|"record missed creates/modifies/deletes"| DB
+
+    DB -->|"ListFiles: DB-driven manifest"| SyncG
+    SyncG -->|"re-hash only pending files"| LF
+    SyncG -->|"GetSyncPlan / Upload / Download"| Server["gRPC server"]
+    SyncG -->|"MarkAllCompleted on success"| PO

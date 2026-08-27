@@ -1,10 +1,20 @@
-flowchart TB
+flowchart LR
     subgraph Server["Go Sync Server"]
-        API["gRPC API"]
+        direction TB
+        Auth["AuthInterceptor<br/>unary + stream interceptors,<br/>bearer token via metadata,<br/>RegisterDevice exempt"]
+        Transport["Service (gRPC transport)<br/>proto <-> domain mapping,<br/>thin/stateless"]
+        App["SyncService (business)<br/>RegisterDevice, ComputeSyncPlan,<br/>ApplyUpload, FetchFile"]
+        Repos["Repositories<br/>FileRepository, VersionRepository,<br/>DeviceRepository"]
+        R2Client["R2Client"]
+
+        Auth --> Transport
+        Transport --> App
+        App --> Repos
+        App --> R2Client
     end
 
-    Turso["Turso Metadata DB"]
-    R2["Cloudflare R2"]
+    Turso["Turso metadata DB<br/>(devices, files,<br/>file_versions, conflicts)"]
+    R2["Cloudflare R2<br/>uploads/<file_id>/<version_id>"]
 
-    API <-->|"metadata"| Turso
-    API <-->|"chunks"| R2
+    Repos <-->|"metadata"| Turso
+    R2Client <-->|"bytes (Put/Get/Delete)"| R2

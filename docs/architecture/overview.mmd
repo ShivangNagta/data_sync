@@ -1,21 +1,33 @@
 flowchart TB
-    subgraph Client["Client Daemon"]
-        Watcher["fsnotify"]
-        Scanner["Periodic Scanner"]
-        SyncEngine["Sync Engine"]
-        LocalDB["SQLite DB"]
+    subgraph Client["Client Daemon (Go)"]
+        Watcher["fsnotify watcher<br/>(top-level dir only)"]
+        Reconcile["Startup reconcile<br/>(one-shot, recursive disk-vs-DB)"]
+        LocalDB["SQLite DB<br/>local_files + pending_operations"]
+        Manifest["DB-driven manifest<br/>(re-hash pending files only)"]
+        SyncEngine["Sync Engine<br/>(ticker, every SYNC_INTERVAL)"]
+
+        Watcher -->|"RecordChange"| LocalDB
+        Reconcile -->|"record create/modify/delete"| LocalDB
+        LocalDB --> Manifest
+        Manifest --> SyncEngine
     end
 
     subgraph Server["Go Sync Server"]
-        API["gRPC API"]
+        Auth["AuthInterceptor<br/>(bearer token, RegisterDevice exempt)"]
+        Transport["Service (gRPC transport)"]
+        App["SyncService (business)<br/>ComputeSyncPlan / ApplyUpload / FetchFile"]
+        Repos["FileRepository<br/>VersionRepository, DeviceRepository"]
+        R2Client["R2Client"]
+
+        Auth --> Transport
+        Transport --> App
+        App --> Repos
+        App --> R2Client
     end
 
-    Turso["Turso Metadata DB"]
-    R2["Cloudflare R2"]
+    Turso["Turso metadata DB"]
+    R2["Cloudflare R2<br/>uploads/<file_id>/<version_id>"]
 
-    Watcher -->|"event"| SyncEngine
-    Scanner -->|"full scan"| SyncEngine
-    SyncEngine -->|"write state"| LocalDB
-    SyncEngine <-->|"gRPC"| API
-    API <-->|"metadata"| Turso
-    API <-->|"chunks"| R2
+    SyncEngine <-->|"GetSyncPlan /<br/>UploadFile / DownloadFile"| Auth
+    Repos <-->|"metadata"| Turso
+    R2Client <-->|"bytes"| R2

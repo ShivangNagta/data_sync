@@ -1,2 +1,2 @@
 flowchart TB
-    F["files<br/><br/>file_id: TEXT PRIMARY KEY<br/>path: TEXT NOT NULL<br/>current_version: TEXT"]
+    F["files<br/><br/>file_id: TEXT PRIMARY KEY<br/>path: TEXT NOT NULL<br/>current_version: TEXT<br/><br/>index: idx_files_path ON (path)<br/>(lookup by path on every sync plan poll)"]
