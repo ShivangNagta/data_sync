@@ -20,6 +20,12 @@ CREATE TABLE IF NOT EXISTS files (
 )
 `
 
+// Lookups by path happen on every sync-plan poll; index so lookups are
+// point-reads instead of full table scans (keeps Turso rows-read low).
+const CreateFilesPathIndex = `
+CREATE INDEX IF NOT EXISTS idx_files_path ON files (path)
+`
+
 const CreateFileVersionsTable = `
 CREATE TABLE IF NOT EXISTS file_versions (
 	version_id      TEXT PRIMARY KEY,
@@ -32,6 +38,11 @@ CREATE TABLE IF NOT EXISTS file_versions (
 	FOREIGN KEY (file_id) REFERENCES files(file_id),
 	FOREIGN KEY (device_id) REFERENCES devices(device_id)
 )
+`
+
+// Head-version lookups filter by file_id on every poll; index to avoid scans.
+const CreateFileVersionsFileIndex = `
+CREATE INDEX IF NOT EXISTS idx_fv_file_id ON file_versions (file_id)
 `
 
 const CreateConflictsTable = `

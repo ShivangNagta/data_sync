@@ -79,6 +79,8 @@ func migrate(db *sql.DB) error {
 		srv.CreateFilesTable,
 		srv.CreateFileVersionsTable,
 		srv.CreateConflictsTable,
+		srv.CreateFilesPathIndex,
+		srv.CreateFileVersionsFileIndex,
 	}
 	for _, s := range stmts {
 		if _, err := db.ExecContext(context.Background(), s); err != nil {
