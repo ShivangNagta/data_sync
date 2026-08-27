@@ -1,2 +1,20 @@
 flowchart LR
-    PO["pending_operations"] -->|"file_id references local_files.id"| LF["local_files"]
+    subgraph Local["Client SQLite"]
+        LF["local_files"]
+        PO["pending_operations"]
+    end
+
+    subgraph Server["Server (Turso)"]
+        F["files"]
+        FV["file_versions"]
+        DEV["devices"]
+        CON["conflicts"]
+    end
+
+    PO -->|"file_id references local_files.id"| LF
+
+    FV -->|"file_id references files.file_id"| F
+    FV -->|"device_id references devices.device_id"| DEV
+    FV -->|"base_version_id references file_versions.version_id"| FV
+    CON -->|"file_id references files.file_id"| F
+    CON -->|"version_a/version_b reference file_versions.version_id"| FV

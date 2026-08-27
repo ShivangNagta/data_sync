@@ -1,0 +1,46 @@
+package server
+
+// Server-side (Turso) schema.
+// Metadata only - file bytes live in Cloudflare R2.
+
+const CreateDevicesTable = `
+CREATE TABLE IF NOT EXISTS devices (
+	device_id TEXT PRIMARY KEY,
+	name      TEXT NOT NULL,
+	token     TEXT NOT NULL,
+	last_seen DATETIME
+)
+`
+
+const CreateFilesTable = `
+CREATE TABLE IF NOT EXISTS files (
+	file_id         TEXT PRIMARY KEY,
+	path            TEXT NOT NULL,
+	current_version TEXT
+)
+`
+
+const CreateFileVersionsTable = `
+CREATE TABLE IF NOT EXISTS file_versions (
+	version_id      TEXT PRIMARY KEY,
+	file_id         TEXT NOT NULL,
+	device_id       TEXT NOT NULL,
+	base_version_id TEXT,
+	size            INTEGER NOT NULL,
+	root_hash       TEXT NOT NULL,
+	created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+	FOREIGN KEY (file_id) REFERENCES files(file_id),
+	FOREIGN KEY (device_id) REFERENCES devices(device_id)
+)
+`
+
+const CreateConflictsTable = `
+CREATE TABLE IF NOT EXISTS conflicts (
+	conflict_id TEXT PRIMARY KEY,
+	file_id     TEXT NOT NULL,
+	version_a   TEXT NOT NULL,
+	version_b   TEXT NOT NULL,
+	status      TEXT NOT NULL,
+	FOREIGN KEY (file_id) REFERENCES files(file_id)
+)
+`
