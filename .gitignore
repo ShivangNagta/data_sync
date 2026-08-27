@@ -2,3 +2,5 @@
 data
 main
 *.db
+test_folder
+cmd/watcher_test/
