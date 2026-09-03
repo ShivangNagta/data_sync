@@ -40,3 +40,7 @@ flowchart TB
     Repos <-->|"metadata"| Turso
     R2Client <-->|"bytes"| R2
 ```
+
+## License
+
+Released under the [MIT License](./LICENSE). :)
