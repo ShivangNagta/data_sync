@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"flag"
 	"log"
 	"os"
 	"path/filepath"
@@ -18,6 +19,9 @@ import (
 
 func main() {
 	_ = godotenv.Load()
+
+	once := flag.Bool("once", false, "run a single sync cycle then exit (no watcher, no ticker)")
+	flag.Parse()
 
 	// Local SQLite database for pending operations tracking.
 	db, err := sql.Open("sqlite", dbName())
@@ -59,7 +63,19 @@ func main() {
 		log.Printf("reconcile done")
 	}
 
-	// Set up the filesystem watcher so local edits are recorded.
+	ctx := context.Background()
+
+	if *once {
+		// One-shot mode: sync once and exit. No watcher, no ticker.
+		// Intended for mobile/tablet where background daemons are killed
+		// by the OS and fsnotify may not work (FUSE, sandbox restrictions).
+		if err := engine.Sync(ctx, folder); err != nil {
+			log.Fatalf("sync failed: %v", err)
+		}
+		return
+	}
+
+	// Daemon mode: watch for local changes and sync periodically.
 	w, err := client.NewWatcher(db, folder)
 	if err != nil {
 		log.Fatalf("watcher: %v", err)
@@ -69,7 +85,6 @@ func main() {
 	}
 
 	// Initial sync on startup.
-	ctx := context.Background()
 	if err := engine.Sync(ctx, folder); err != nil {
 		log.Printf("initial sync failed: %v", err)
 	}
