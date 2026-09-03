@@ -16,6 +16,9 @@ build_desktop_client:
 build_android_client:
 	GOOS=android GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o ./data/android/sync-client-arm64 ./cmd/client
 
+build_ipad_client:
+	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o ./data/ipad/sync-client-ipad ./cmd/client
+
 test:
 	go test ./...
 
