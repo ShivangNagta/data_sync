@@ -1,4 +1,4 @@
-.PHONY: proto build test
+.PHONY: proto test
 
 # Regenerate gRPC/protobuf Go code from proto/sync/sync.proto
 proto:
@@ -6,8 +6,8 @@ proto:
 	       --go-grpc_out=. --go-grpc_opt=paths=source_relative \
 	       proto/sync/sync.proto
 
-build:
-	go build ./...
+build_server:
+	go build -o ./sync-server ./cmd/server
 
 build_android_client:
 	GOOS=android GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o ./data/sync-client-arm64 ./cmd/client

@@ -7,3 +7,4 @@ cmd/watcher_test/
 .env
 
 cmd/synctest/
+sync-server
