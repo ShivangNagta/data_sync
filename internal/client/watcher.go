@@ -8,6 +8,7 @@ package client
 import (
 	"database/sql"
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/fsnotify/fsnotify"
@@ -72,6 +73,12 @@ func (w *Watcher) watchEvents() {
 		rel = filepath.ToSlash(rel)
 		// Ignore our own temp files and platform junk (see ignore.go).
 		if isIgnored(rel) {
+			continue
+		}
+		// Directories carry no content (reconcile handles sub-files on scans).
+		// Android's FUSE fs emits create/write events for dirs; skip them so
+		// RecordChange doesn't try to hash a directory.
+		if fi, err := os.Stat(event.Name); err == nil && fi.IsDir() {
 			continue
 		}
 
