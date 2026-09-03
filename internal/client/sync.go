@@ -156,7 +156,12 @@ func (e *SyncEngine) download(ctx context.Context, root string, action *sync.Syn
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmpName, full)
+	if err := os.Rename(tmpName, full); err != nil {
+		return err
+	}
+	// Record the file so the next manifest sees it as already-synced instead
+	// of re-downloading it (or re-uploading it as a new local file).
+	return storage.MarkDownloaded(e.db, action.Path, action.Size, action.Hash)
 }
 
 func (e *SyncEngine) deleteLocal(root, path string) error {

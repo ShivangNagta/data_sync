@@ -121,6 +121,15 @@ func Untrack(db *sql.DB, path string) error {
 	return nil
 }
 
+// MarkDownloaded records a file that was just pulled from the server into the
+// local DB using the size/hash the server reported, so the next manifest
+// includes it as already-synced. This avoids re-downloading it in the same
+// session and stops it from being re-uploaded as if it were a new local file.
+// A freshly downloaded file has no pending operation: it's already in sync.
+func MarkDownloaded(db *sql.DB, path string, size int64, hash string) error {
+	return upsertFile(db, path, "synced", size, hash)
+}
+
 // Returns all the pending operations that have not been synced yet
 // A slice of a custom type PendingOp is used as the return type
 func GetPendingOps(db *sql.DB) ([]PendingOp, error) {
