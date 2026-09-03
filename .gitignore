@@ -5,6 +5,7 @@ data
 test_folder
 cmd/watcher_test/
 .env
+.env.client
 
 cmd/synctest/
 /sync-server
