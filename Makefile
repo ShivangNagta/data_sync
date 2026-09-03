@@ -9,5 +9,8 @@ proto:
 build:
 	go build ./...
 
+build_android_client:
+	GOOS=android GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o ./data/sync-client-arm64 ./cmd/client
+
 test:
 	go test ./...
