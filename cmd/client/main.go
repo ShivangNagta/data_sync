@@ -39,11 +39,21 @@ func main() {
 		log.Fatalf("migrate local db: %v", err)
 	}
 
-	// Folder to sync (absolute).
+	// Folder to sync (absolute). Validate it early so a missing/mispasted
+	// SYNC_FOLDER doesn't silently sync the current working directory (which
+	// could be the whole repo, .git included).
 	folder, err := filepath.Abs(getenv("SYNC_FOLDER", "."))
 	if err != nil {
 		log.Fatalf("resolve folder: %v", err)
 	}
+	fi, err := os.Stat(folder)
+	if err != nil {
+		log.Fatalf("sync folder %q is not accessible: %v", folder, err)
+	}
+	if !fi.IsDir() {
+		log.Fatalf("sync folder %q is not a directory", folder)
+	}
+	log.Printf("syncing folder: %s", folder)
 
 	// Connection + device registration/token persistence.
 	sc, err := client.NewSyncClient(client.ClientConfig{
