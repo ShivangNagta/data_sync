@@ -1,10 +1,11 @@
 .DS_Store
 data
-main
+/main
 *.db
 test_folder
 cmd/watcher_test/
 .env
 
 cmd/synctest/
-sync-server
+/sync-server
+/sync-client-desktop

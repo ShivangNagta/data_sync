@@ -1,5 +1,10 @@
 package server
 
+import (
+	"database/sql"
+	"fmt"
+)
+
 // Server-side (Turso) schema.
 // Metadata only - file bytes live in Cloudflare R2.
 
@@ -55,3 +60,22 @@ CREATE TABLE IF NOT EXISTS conflicts (
 	FOREIGN KEY (file_id) REFERENCES files(file_id)
 )
 `
+
+// ClearDatabase removes all rows from every metadata table. Order matters for
+// foreign keys: children (file_versions, conflicts) must be cleared before
+// parents (files, devices). Indexes and schema are left intact so migrate()
+// still succeeds after a reset.
+func ClearDatabase(db *sql.DB) error {
+	var err error
+	for _, stmt := range []string{
+		"DELETE FROM file_versions",
+		"DELETE FROM conflicts",
+		"DELETE FROM files",
+		"DELETE FROM devices",
+	} {
+		if _, err = db.Exec(stmt); err != nil {
+			return fmt.Errorf("clear db (%s): %w", stmt, err)
+		}
+	}
+	return nil
+}
