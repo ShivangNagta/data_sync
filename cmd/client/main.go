@@ -29,6 +29,11 @@ func main() {
 		log.Fatalf("open local db: %v", err)
 	}
 	defer db.Close()
+	// Serialize all access on a single connection. The watcher goroutine and
+	// the sync loop both write to the same SQLite file; a pooled (multi-
+	// connection) DB surfaces SQLITE_BUSY on concurrent writes, especially on
+	// slower mobile storage.
+	db.SetMaxOpenConns(1)
 
 	if err := migrate(db); err != nil {
 		log.Fatalf("migrate local db: %v", err)
