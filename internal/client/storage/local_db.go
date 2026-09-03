@@ -102,6 +102,25 @@ func upsertFile(db *sql.DB, path, state string, size int64, hash string) error {
 	return nil
 }
 
+// Untrack removes a file from sync entirely: drops its local_files row and any
+// pending operations, leaving the file itself untouched on disk. Used when a
+// file becomes excluded (e.g. .DS_Store or a stray temp row) after having been
+// tracked.
+func Untrack(db *sql.DB, path string) error {
+	_, err := db.Exec(
+		"DELETE FROM pending_operations WHERE file_id IN (SELECT id FROM local_files WHERE path = ?)",
+		path,
+	)
+	if err != nil {
+		return fmt.Errorf("delete pending ops: %w", err)
+	}
+	_, err = db.Exec("DELETE FROM local_files WHERE path = ?", path)
+	if err != nil {
+		return fmt.Errorf("delete local_files: %w", err)
+	}
+	return nil
+}
+
 // Returns all the pending operations that have not been synced yet
 // A slice of a custom type PendingOp is used as the return type
 func GetPendingOps(db *sql.DB) ([]PendingOp, error) {

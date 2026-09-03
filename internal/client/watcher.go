@@ -70,6 +70,10 @@ func (w *Watcher) watchEvents() {
 			continue
 		}
 		rel = filepath.ToSlash(rel)
+		// Ignore our own temp files and platform junk (see ignore.go).
+		if isIgnored(rel) {
+			continue
+		}
 
 		err = storage.RecordChange(w.db, w.folder, rel, opType)
 		if err != nil {

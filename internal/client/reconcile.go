@@ -39,6 +39,10 @@ func Reconcile(db *sql.DB, root string) error {
 			return err
 		}
 		rel = filepath.ToSlash(rel)
+		// Never track our own temp files or platform junk.
+		if isIgnored(rel) {
+			return nil
+		}
 		onDisk[rel] = true
 
 		_, hash, err := storage.HashFileContent(p)
@@ -55,6 +59,15 @@ func Reconcile(db *sql.DB, root string) error {
 	// For each tracked file, compare DB state vs disk.
 	for _, f := range tracked {
 		p := filepath.ToSlash(f.Path)
+
+		// File is now excluded (e.g. pre-existing .DS_Store or a stray temp
+		// row). Stop tracking it; leave the file itself alone.
+		if isIgnored(p) {
+			if err := storage.Untrack(db, p); err != nil {
+				return fmt.Errorf("untrack ignored %s: %w", p, err)
+			}
+			continue
+		}
 
 		if !onDisk[p] {
 			// Tracked but gone from disk -> deletion (probably missed event).
