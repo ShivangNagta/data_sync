@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"time"
 
-	_ "modernc.org/sqlite"
 	"github.com/joho/godotenv"
+	_ "modernc.org/sqlite"
 
 	"github.com/shivangnagta/data_sync/internal/client"
 	"github.com/shivangnagta/data_sync/internal/client/storage"

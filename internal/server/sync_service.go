@@ -15,7 +15,7 @@ import (
 // business logic to the application service. It stays thin.
 type Service struct {
 	sync.UnimplementedSyncServiceServer
-	app *SyncService
+	app  *SyncService
 	auth *AuthInterceptor
 }
 

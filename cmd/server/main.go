@@ -8,8 +8,8 @@ import (
 	"net"
 	"os"
 
-	_ "github.com/tursodatabase/go-libsql"
 	"github.com/joho/godotenv"
+	_ "github.com/tursodatabase/go-libsql"
 	"google.golang.org/grpc"
 
 	srv "github.com/shivangnagta/data_sync/internal/server"
