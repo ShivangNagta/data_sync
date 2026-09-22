@@ -794,6 +794,94 @@ func (x *DownloadFileMeta) GetHash() string {
 	return ""
 }
 
+type DeleteFileRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Path          string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteFileRequest) Reset() {
+	*x = DeleteFileRequest{}
+	mi := &file_proto_sync_sync_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteFileRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteFileRequest) ProtoMessage() {}
+
+func (x *DeleteFileRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_sync_sync_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteFileRequest.ProtoReflect.Descriptor instead.
+func (*DeleteFileRequest) Descriptor() ([]byte, []int) {
+	return file_proto_sync_sync_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *DeleteFileRequest) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+type DeleteFileResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Deleted       bool                   `protobuf:"varint,1,opt,name=deleted,proto3" json:"deleted,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteFileResponse) Reset() {
+	*x = DeleteFileResponse{}
+	mi := &file_proto_sync_sync_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteFileResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteFileResponse) ProtoMessage() {}
+
+func (x *DeleteFileResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_sync_sync_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteFileResponse.ProtoReflect.Descriptor instead.
+func (*DeleteFileResponse) Descriptor() ([]byte, []int) {
+	return file_proto_sync_sync_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *DeleteFileResponse) GetDeleted() bool {
+	if x != nil {
+		return x.Deleted
+	}
+	return false
+}
+
 var File_proto_sync_sync_proto protoreflect.FileDescriptor
 
 const file_proto_sync_sync_proto_rawDesc = "" +
@@ -852,13 +940,19 @@ const file_proto_sync_sync_proto_rawDesc = "" +
 	"\n" +
 	"version_id\x18\x02 \x01(\tR\tversionId\x12\x12\n" +
 	"\x04size\x18\x03 \x01(\x03R\x04size\x12\x12\n" +
-	"\x04hash\x18\x04 \x01(\tR\x04hash2\xaa\x02\n" +
+	"\x04hash\x18\x04 \x01(\tR\x04hash\"'\n" +
+	"\x11DeleteFileRequest\x12\x12\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\".\n" +
+	"\x12DeleteFileResponse\x12\x18\n" +
+	"\adeleted\x18\x01 \x01(\bR\adeleted2\xeb\x02\n" +
 	"\vSyncService\x12K\n" +
 	"\x0eRegisterDevice\x12\x1b.sync.RegisterDeviceRequest\x1a\x1c.sync.RegisterDeviceResponse\x12B\n" +
 	"\vGetSyncPlan\x12\x18.sync.GetSyncPlanRequest\x1a\x19.sync.GetSyncPlanResponse\x12A\n" +
 	"\n" +
 	"UploadFile\x12\x17.sync.UploadFileRequest\x1a\x18.sync.UploadFileResponse(\x01\x12G\n" +
-	"\fDownloadFile\x12\x19.sync.DownloadFileRequest\x1a\x1a.sync.DownloadFileResponse0\x01B.Z,github.com/shivangnagta/data_sync/proto/syncb\x06proto3"
+	"\fDownloadFile\x12\x19.sync.DownloadFileRequest\x1a\x1a.sync.DownloadFileResponse0\x01\x12?\n" +
+	"\n" +
+	"DeleteFile\x12\x17.sync.DeleteFileRequest\x1a\x18.sync.DeleteFileResponseB.Z,github.com/shivangnagta/data_sync/proto/syncb\x06proto3"
 
 var (
 	file_proto_sync_sync_proto_rawDescOnce sync.Once
@@ -873,7 +967,7 @@ func file_proto_sync_sync_proto_rawDescGZIP() []byte {
 }
 
 var file_proto_sync_sync_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_proto_sync_sync_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_proto_sync_sync_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_proto_sync_sync_proto_goTypes = []any{
 	(SyncAction_ActionType)(0),     // 0: sync.SyncAction.ActionType
 	(*FileState)(nil),              // 1: sync.FileState
@@ -888,6 +982,8 @@ var file_proto_sync_sync_proto_goTypes = []any{
 	(*DownloadFileRequest)(nil),    // 10: sync.DownloadFileRequest
 	(*DownloadFileResponse)(nil),   // 11: sync.DownloadFileResponse
 	(*DownloadFileMeta)(nil),       // 12: sync.DownloadFileMeta
+	(*DeleteFileRequest)(nil),      // 13: sync.DeleteFileRequest
+	(*DeleteFileResponse)(nil),     // 14: sync.DeleteFileResponse
 }
 var file_proto_sync_sync_proto_depIdxs = []int32{
 	1,  // 0: sync.GetSyncPlanRequest.local_files:type_name -> sync.FileState
@@ -899,12 +995,14 @@ var file_proto_sync_sync_proto_depIdxs = []int32{
 	4,  // 6: sync.SyncService.GetSyncPlan:input_type -> sync.GetSyncPlanRequest
 	7,  // 7: sync.SyncService.UploadFile:input_type -> sync.UploadFileRequest
 	10, // 8: sync.SyncService.DownloadFile:input_type -> sync.DownloadFileRequest
-	3,  // 9: sync.SyncService.RegisterDevice:output_type -> sync.RegisterDeviceResponse
-	6,  // 10: sync.SyncService.GetSyncPlan:output_type -> sync.GetSyncPlanResponse
-	9,  // 11: sync.SyncService.UploadFile:output_type -> sync.UploadFileResponse
-	11, // 12: sync.SyncService.DownloadFile:output_type -> sync.DownloadFileResponse
-	9,  // [9:13] is the sub-list for method output_type
-	5,  // [5:9] is the sub-list for method input_type
+	13, // 9: sync.SyncService.DeleteFile:input_type -> sync.DeleteFileRequest
+	3,  // 10: sync.SyncService.RegisterDevice:output_type -> sync.RegisterDeviceResponse
+	6,  // 11: sync.SyncService.GetSyncPlan:output_type -> sync.GetSyncPlanResponse
+	9,  // 12: sync.SyncService.UploadFile:output_type -> sync.UploadFileResponse
+	11, // 13: sync.SyncService.DownloadFile:output_type -> sync.DownloadFileResponse
+	14, // 14: sync.SyncService.DeleteFile:output_type -> sync.DeleteFileResponse
+	10, // [10:15] is the sub-list for method output_type
+	5,  // [5:10] is the sub-list for method input_type
 	5,  // [5:5] is the sub-list for extension type_name
 	5,  // [5:5] is the sub-list for extension extendee
 	0,  // [0:5] is the sub-list for field type_name
@@ -929,7 +1027,7 @@ func file_proto_sync_sync_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_sync_sync_proto_rawDesc), len(file_proto_sync_sync_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   12,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

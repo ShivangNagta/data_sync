@@ -23,6 +23,7 @@ const (
 	SyncService_GetSyncPlan_FullMethodName    = "/sync.SyncService/GetSyncPlan"
 	SyncService_UploadFile_FullMethodName     = "/sync.SyncService/UploadFile"
 	SyncService_DownloadFile_FullMethodName   = "/sync.SyncService/DownloadFile"
+	SyncService_DeleteFile_FullMethodName     = "/sync.SyncService/DeleteFile"
 )
 
 // SyncServiceClient is the client API for SyncService service.
@@ -33,6 +34,7 @@ type SyncServiceClient interface {
 	GetSyncPlan(ctx context.Context, in *GetSyncPlanRequest, opts ...grpc.CallOption) (*GetSyncPlanResponse, error)
 	UploadFile(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[UploadFileRequest, UploadFileResponse], error)
 	DownloadFile(ctx context.Context, in *DownloadFileRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[DownloadFileResponse], error)
+	DeleteFile(ctx context.Context, in *DeleteFileRequest, opts ...grpc.CallOption) (*DeleteFileResponse, error)
 }
 
 type syncServiceClient struct {
@@ -95,6 +97,16 @@ func (c *syncServiceClient) DownloadFile(ctx context.Context, in *DownloadFileRe
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type SyncService_DownloadFileClient = grpc.ServerStreamingClient[DownloadFileResponse]
 
+func (c *syncServiceClient) DeleteFile(ctx context.Context, in *DeleteFileRequest, opts ...grpc.CallOption) (*DeleteFileResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteFileResponse)
+	err := c.cc.Invoke(ctx, SyncService_DeleteFile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SyncServiceServer is the server API for SyncService service.
 // All implementations must embed UnimplementedSyncServiceServer
 // for forward compatibility.
@@ -103,6 +115,7 @@ type SyncServiceServer interface {
 	GetSyncPlan(context.Context, *GetSyncPlanRequest) (*GetSyncPlanResponse, error)
 	UploadFile(grpc.ClientStreamingServer[UploadFileRequest, UploadFileResponse]) error
 	DownloadFile(*DownloadFileRequest, grpc.ServerStreamingServer[DownloadFileResponse]) error
+	DeleteFile(context.Context, *DeleteFileRequest) (*DeleteFileResponse, error)
 	mustEmbedUnimplementedSyncServiceServer()
 }
 
@@ -124,6 +137,9 @@ func (UnimplementedSyncServiceServer) UploadFile(grpc.ClientStreamingServer[Uplo
 }
 func (UnimplementedSyncServiceServer) DownloadFile(*DownloadFileRequest, grpc.ServerStreamingServer[DownloadFileResponse]) error {
 	return status.Error(codes.Unimplemented, "method DownloadFile not implemented")
+}
+func (UnimplementedSyncServiceServer) DeleteFile(context.Context, *DeleteFileRequest) (*DeleteFileResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteFile not implemented")
 }
 func (UnimplementedSyncServiceServer) mustEmbedUnimplementedSyncServiceServer() {}
 func (UnimplementedSyncServiceServer) testEmbeddedByValue()                     {}
@@ -200,6 +216,24 @@ func _SyncService_DownloadFile_Handler(srv interface{}, stream grpc.ServerStream
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type SyncService_DownloadFileServer = grpc.ServerStreamingServer[DownloadFileResponse]
 
+func _SyncService_DeleteFile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteFileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SyncServiceServer).DeleteFile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SyncService_DeleteFile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SyncServiceServer).DeleteFile(ctx, req.(*DeleteFileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SyncService_ServiceDesc is the grpc.ServiceDesc for SyncService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -214,6 +248,10 @@ var SyncService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetSyncPlan",
 			Handler:    _SyncService_GetSyncPlan_Handler,
+		},
+		{
+			MethodName: "DeleteFile",
+			Handler:    _SyncService_DeleteFile_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

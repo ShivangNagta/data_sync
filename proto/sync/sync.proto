@@ -78,9 +78,18 @@ message DownloadFileMeta {
   string hash = 4;
 }
 
+message DeleteFileRequest {
+  string path = 1;
+}
+
+message DeleteFileResponse {
+  bool deleted = 1;
+}
+
 service SyncService {
   rpc RegisterDevice(RegisterDeviceRequest) returns (RegisterDeviceResponse);
   rpc GetSyncPlan(GetSyncPlanRequest) returns (GetSyncPlanResponse);
   rpc UploadFile(stream UploadFileRequest) returns (UploadFileResponse);
   rpc DownloadFile(DownloadFileRequest) returns (stream DownloadFileResponse);
+  rpc DeleteFile(DeleteFileRequest) returns (DeleteFileResponse);
 }

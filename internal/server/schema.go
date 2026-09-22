@@ -21,7 +21,9 @@ const CreateFilesTable = `
 CREATE TABLE IF NOT EXISTS files (
 	file_id         TEXT PRIMARY KEY,
 	path            TEXT NOT NULL,
-	current_version TEXT
+	current_version TEXT,
+	deleted_at      DATETIME,
+	deleted_by      TEXT
 )
 `
 
@@ -78,4 +80,48 @@ func ClearDatabase(db *sql.DB) error {
 		}
 	}
 	return nil
+}
+
+// MigrateFilesTable upgrades an existing files table (created before the
+// tombstone columns existed) to have deleted_at/deleted_by. ALTER TABLE cannot
+// add a column that already exists, and CREATE TABLE IF NOT EXISTS does not
+// touch existing tables, so we check PRAGMA table_info and only add what's
+// missing. Fresh databases get the columns from CreateFilesTable directly.
+func MigrateFilesTable(db *sql.DB) error {
+	cols, err := tableColumns(db, "files")
+	if err != nil {
+		return err
+	}
+	if _, ok := cols["deleted_at"]; !ok {
+		if _, err := db.Exec("ALTER TABLE files ADD COLUMN deleted_at DATETIME"); err != nil {
+			return fmt.Errorf("add deleted_at column: %w", err)
+		}
+	}
+	if _, ok := cols["deleted_by"]; !ok {
+		if _, err := db.Exec("ALTER TABLE files ADD COLUMN deleted_by TEXT"); err != nil {
+			return fmt.Errorf("add deleted_by column: %w", err)
+		}
+	}
+	return nil
+}
+
+// tableColumns returns the set of column names for a table via PRAGMA.
+func tableColumns(db *sql.DB, table string) (map[string]bool, error) {
+	rows, err := db.Query("PRAGMA table_info(" + table + ")")
+	if err != nil {
+		return nil, fmt.Errorf("pragma table_info(%s): %w", table, err)
+	}
+	defer rows.Close()
+
+	cols := make(map[string]bool)
+	for rows.Next() {
+		var cid, name, ctype string
+		var notnull int
+		var dflt, pk interface{}
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			return nil, fmt.Errorf("scan column: %w", err)
+		}
+		cols[name] = true
+	}
+	return cols, rows.Err()
 }

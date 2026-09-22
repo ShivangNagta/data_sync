@@ -117,7 +117,8 @@ func migrate(db *sql.DB) error {
 			return err
 		}
 	}
-	return nil
+	// Upgrade pre-tombstone databases.
+	return srv.MigrateFilesTable(db)
 }
 
 func getenv(k, def string) string {

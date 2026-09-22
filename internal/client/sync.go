@@ -28,7 +28,30 @@ func NewSyncEngine(c *SyncClient, db *sql.DB) *SyncEngine {
 // Sync runs one full sync pass: build manifest, ask the server for a plan,
 // execute it, and mark completed pending ops.
 func (e *SyncEngine) Sync(ctx context.Context, root string) error {
-	manifest, pending, err := buildManifest(e.db, root)
+	// Propagate local deletions to the server FIRST. A deleted file is
+	// excluded from the manifest, so without an explicit delete the server
+	// would treat its absence as "unknown file" and plan a download for it -
+	// re-downloading what the user just deleted.
+	ops, err := storage.GetPendingOps(e.db)
+	if err != nil {
+		return fmt.Errorf("get pending ops: %w", err)
+	}
+	pendingSet := make(map[string]bool, len(ops))
+	for _, op := range ops {
+		pendingSet[op.Path] = true
+		if op.OpType == "delete" {
+			if err := e.deleteRemote(ctx, op.Path); err != nil {
+				return fmt.Errorf("delete %s: %w", op.Path, err)
+			}
+			// Server acknowledged the deletion; stop tracking the file so it
+			// never re-enters the manifest.
+			if err := storage.Untrack(e.db, op.Path); err != nil {
+				return fmt.Errorf("untrack %s: %w", op.Path, err)
+			}
+		}
+	}
+
+	manifest, _, err := buildManifest(e.db, root)
 	if err != nil {
 		return fmt.Errorf("build manifest: %w", err)
 	}
@@ -36,13 +59,6 @@ func (e *SyncEngine) Sync(ctx context.Context, root string) error {
 	req := &sync.GetSyncPlanRequest{}
 	for _, f := range manifest {
 		req.LocalFiles = append(req.LocalFiles, f)
-	}
-
-	// Paths with pending local edits must be uploaded, never overwritten by a
-	// download. The manifest returned them; mark them so execution protects them.
-	pendingSet := make(map[string]bool, len(pending))
-	for _, p := range pending {
-		pendingSet[p] = true
 	}
 
 	resp, err := e.client.API().GetSyncPlan(e.client.AuthContext(ctx), req)
@@ -71,6 +87,14 @@ func (e *SyncEngine) Sync(ctx context.Context, root string) error {
 				return fmt.Errorf("download %s: %w", action.Path, err)
 			}
 		case sync.SyncAction_DELETE:
+			// Protect un-synced local edits: if we changed this file since the
+			// deletion, our newer edit wins (last-write-wins) - upload it.
+			if pendingSet[action.Path] {
+				if err := e.upload(ctx, root, action.Path); err != nil {
+					return fmt.Errorf("re-upload %s: %w", action.Path, err)
+				}
+				continue
+			}
 			if err := e.deleteLocal(root, action.Path); err != nil {
 				return fmt.Errorf("delete %s: %w", action.Path, err)
 			}
@@ -166,5 +190,20 @@ func (e *SyncEngine) download(ctx context.Context, root string, action *sync.Syn
 
 func (e *SyncEngine) deleteLocal(root, path string) error {
 	full := filepath.Join(root, filepath.FromSlash(path))
-	return os.Remove(full)
+	// The file may already be gone (e.g. server and local deletes raced);
+	// that's fine - the goal is its absence.
+	if err := os.Remove(full); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	// Stop tracking it so it doesn't get re-reported as a local file.
+	return storage.Untrack(e.db, path)
+}
+
+// deleteRemote tells the server to tombstone a file (delete on all devices).
+func (e *SyncEngine) deleteRemote(ctx context.Context, path string) error {
+	_, err := e.client.API().DeleteFile(
+		e.client.AuthContext(ctx),
+		&sync.DeleteFileRequest{Path: path},
+	)
+	return err
 }

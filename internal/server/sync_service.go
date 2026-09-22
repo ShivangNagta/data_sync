@@ -145,6 +145,19 @@ func (s *Service) DownloadFile(req *sync.DownloadFileRequest, stream sync.SyncSe
 	return nil
 }
 
+// DeleteFile tombstones a file server-side. Requires an authenticated device.
+func (s *Service) DeleteFile(ctx context.Context, req *sync.DeleteFileRequest) (*sync.DeleteFileResponse, error) {
+	up, ok := UploaderFrom(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "missing device identity")
+	}
+
+	if err := s.app.ApplyDelete(ctx, req.Path, up.DeviceID); err != nil {
+		return nil, status.Errorf(codes.Internal, "apply delete: %v", err)
+	}
+	return &sync.DeleteFileResponse{Deleted: true}, nil
+}
+
 func actionToProto(action string) sync.SyncAction_ActionType {
 	switch action {
 	case "upload":

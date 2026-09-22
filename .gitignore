@@ -10,3 +10,4 @@ cmd/watcher_test/
 cmd/synctest/
 /sync-server
 /sync-client-desktop
+sync_token.json

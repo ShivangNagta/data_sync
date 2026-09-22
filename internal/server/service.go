@@ -56,9 +56,16 @@ func (s *SyncService) ComputeSyncPlan(ctx context.Context, clientFiles map[strin
 			return nil, fmt.Errorf("get file: %w", err)
 		}
 
-		// Server doesn't know this file -> client should upload it.
+		// The server doesn't know this file -> client should upload it.
 		if !exists {
 			actions = append(actions, SyncAction{Path: path, Action: "upload"})
+			continue
+		}
+
+		// The file was deleted on the server (tombstoned) but this client still
+		// has it -> the client should delete its local copy.
+		if serverFile.IsDeleted() {
+			actions = append(actions, SyncAction{Path: path, Action: "delete"})
 			continue
 		}
 
@@ -168,8 +175,45 @@ func (s *SyncService) ApplyUpload(ctx context.Context, path string, data []byte,
 	if err := s.files.SetCurrentVersion(ctx, fileID, versionID); err != nil {
 		return "", fmt.Errorf("set current version: %w", err)
 	}
+	// New content wins over a deletion: uploading the file resurrects it.
+	if err := s.files.ClearDeleted(ctx, fileID); err != nil {
+		return "", fmt.Errorf("clear deleted: %w", err)
+	}
 
 	return versionID, nil
+}
+
+// ApplyDelete tombstones a file so syncing clients remove their copies and a
+// new device never receives it. It is idempotent: deleting an unknown or
+// already-deleted file is a no-op. Last-write-wins: a subsequent upload (from
+// another device that edited the file while this deletion propagated) clears
+// the tombstone via ApplyUpload.
+func (s *SyncService) ApplyDelete(ctx context.Context, path, deviceID string) error {
+	found, exists, err := s.files.GetFileByPath(ctx, path)
+	if err != nil {
+		return fmt.Errorf("get file: %w", err)
+	}
+	if !exists || found.IsDeleted() {
+		// Nothing to do (unknown file or already tombstoned).
+		return nil
+	}
+
+	// Drop the current bytes from R2. Older versions remain orphaned; this is
+	// an accepted tradeoff until a per-file purge is implemented.
+	head, hasVersion, err := s.versions.GetHeadVersion(ctx, found.FileID)
+	if err != nil {
+		return fmt.Errorf("get head: %w", err)
+	}
+	if hasVersion {
+		if err := s.r2.Delete(ctx, found.FileID, head.VersionID); err != nil {
+			return fmt.Errorf("delete from r2: %w", err)
+		}
+	}
+
+	if err := s.files.MarkDeleted(ctx, found.FileID, deviceID); err != nil {
+		return fmt.Errorf("mark deleted: %w", err)
+	}
+	return nil
 }
 
 // FetchFile retrieves the current bytes for a file path.
