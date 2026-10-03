@@ -354,7 +354,10 @@ async fn commit(state: &State, env: &Env, sql: &SqlStorage, req: &mut Request) -
 
     if input.operation == "delete" {
         if let Some(current) = current {
-            if !input.last_seen_hash.is_empty() && current.hash != input.last_seen_hash {
+            if current.deleted == 0
+                && !input.last_seen_hash.is_empty()
+                && current.hash != input.last_seen_hash
+            {
                 return Response::from_json(&CommitResponse {
                     accepted: false,
                     conflict: true,
