@@ -120,13 +120,18 @@ func (e *SyncEngine) upload(ctx context.Context, root, path string) error {
 		return err
 	}
 
+	lastSeenHash, err := storage.GetLastSeenHash(e.db, path)
+	if err != nil {
+		return err
+	}
+
 	stream, err := e.client.API().UploadFile(e.client.AuthContext(ctx))
 	if err != nil {
 		return err
 	}
 	if err := stream.Send(&sync.UploadFileRequest{
 		Payload: &sync.UploadFileRequest_Meta{
-			Meta: &sync.UploadFileMeta{Path: path, Size: size, Hash: hash},
+			Meta: &sync.UploadFileMeta{Path: path, Size: size, Hash: hash, LastSeenHash: lastSeenHash},
 		},
 	}); err != nil {
 		return err
@@ -136,8 +141,14 @@ func (e *SyncEngine) upload(ctx context.Context, root, path string) error {
 	}); err != nil {
 		return err
 	}
-	_, err = stream.CloseAndRecv()
-	return err
+	resp, err := stream.CloseAndRecv()
+	if err != nil {
+		return err
+	}
+	if resp.Conflict {
+		return fmt.Errorf("conflict: server has %s", resp.CurrentHash)
+	}
+	return nil
 }
 
 func (e *SyncEngine) download(ctx context.Context, root string, action *sync.SyncAction) error {

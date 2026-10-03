@@ -8,7 +8,8 @@ var CreateLocalFilesTable = `
 		path TEXT NOT NULL UNIQUE,
 		state TEXT NOT NULL,
 		size INTEGER NOT NULL DEFAULT 0,
-		hash TEXT NOT NULL DEFAULT ''
+		hash TEXT NOT NULL DEFAULT '',
+		last_seen_hash TEXT NOT NULL DEFAULT ''
 	)
 `
 

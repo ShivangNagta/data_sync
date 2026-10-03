@@ -127,7 +127,26 @@ func Untrack(db *sql.DB, path string) error {
 // session and stops it from being re-uploaded as if it were a new local file.
 // A freshly downloaded file has no pending operation: it's already in sync.
 func MarkDownloaded(db *sql.DB, path string, size int64, hash string) error {
-	return upsertFile(db, path, "synced", size, hash)
+	_, err := db.Exec(`
+		INSERT INTO local_files (path, state, size, hash, last_seen_hash) VALUES (?, 'synced', ?, ?, ?)
+		ON CONFLICT(path) DO UPDATE SET state = 'synced', size = ?, hash = ?, last_seen_hash = ?
+	`, path, size, hash, hash, size, hash, hash)
+	if err != nil {
+		return fmt.Errorf("mark downloaded: %w", err)
+	}
+	return nil
+}
+
+func GetLastSeenHash(db *sql.DB, path string) (string, error) {
+	var hash string
+	err := db.QueryRow("SELECT last_seen_hash FROM local_files WHERE path = ?", path).Scan(&hash)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("get last seen hash: %w", err)
+	}
+	return hash, nil
 }
 
 // Returns all the pending operations that have not been synced yet
