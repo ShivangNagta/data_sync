@@ -19,25 +19,19 @@ flowchart TB
         Manifest --> SyncEngine
     end
 
-    subgraph Server["Go Sync Server"]
-        Auth["AuthInterceptor<br/>(bearer token, RegisterDevice exempt)"]
-        Transport["Service (gRPC transport)"]
-        App["SyncService (business)<br/>ComputeSyncPlan / ApplyUpload / FetchFile"]
-        Repos["FileRepository<br/>VersionRepository, DeviceRepository"]
-        R2Client["R2Client"]
+    subgraph Worker["Rust Cloudflare Worker"]
+        API["HTTP/JSON API<br/>(bearer token)"]
+        DurableObject["Durable Object<br/>SQLite metadata + coordination"]
+        R2Client["R2 object storage"]
+        Events["Authenticated SSE"]
 
-        Auth --> Transport
-        Transport --> App
-        App --> Repos
-        App --> R2Client
+        API --> DurableObject
+        API --> R2Client
+        DurableObject --> Events
     end
 
-    Turso["Turso metadata DB"]
-    R2["Cloudflare R2<br/>uploads/<file_id>/<version_id>"]
-
-    SyncEngine <-->|"GetSyncPlan /<br/>UploadFile / DownloadFile"| Auth
-    Repos <-->|"metadata"| Turso
-    R2Client <-->|"bytes"| R2
+    SyncEngine <-->|"JSON sync plan/commit<br/>and file bytes"| API
+    SyncEngine <-->|"change events"| Events
 ```
 
 ## How it works
@@ -45,13 +39,13 @@ flowchart TB
 - **Client** watches a folder with fsnotify (top-level directory only). Every event is written to a local SQLite DB (`local_files` + `pending_operations`) as a create/modify/delete op, along with the file's size and SHA-256 hash.
 - At **startup** a one-shot, recursive reconcile walks disk vs DB to catch anything the watcher missed while the process was down.
 - On every **sync pass** the client builds a *DB-driven manifest* (re-hashing only files with pending ops), sends it to the server, and executes the returned plan. A file with a pending local edit is always **uploaded, never overwritten** by a download or delete (client-push-wins).
-- Local deletions are propagated explicitly: the client calls `DeleteFile` on the server before requesting its plan, which tombstones the file (`files.deleted_at`/`deleted_by`). The server then tells other clients to DELETE it, never offers a tombstoned file as a download, and new devices never receive it. Re-creating the file on any device resurrects it (last-write-wins).
-- **Server** computes the plan by comparing the client's manifest against Turso metadata (indexed path + head-version lookups). Bytes go to R2 under a content-addressed layout, so old versions are never destroyed. Upload is streamed whole-file (chunking is a post-MVP TODO); download is streamed and written atomically (temp file + rename).
+- Local deletions are propagated explicitly: the client commits a delete operation to the Worker, which stores a tombstone in Durable Object SQLite. The Worker then tells other clients to DELETE it, never offers a tombstoned file as a download, and new devices never receive it.
+- The **Rust Worker** computes the plan by comparing the client's manifest against Durable Object SQLite metadata. Bytes go to R2 under content-addressed keys, so files are immutable and deduplicated. Upload and download are whole-file HTTP transfers written atomically on the client.
 
 ## Current scope / known gaps
 
 - Whole-file transfer; chunked upload + resumable is deferred.
-- Last-writer-wins; proper conflict detection is deferred (metadata for it is already reserved).
-- Deletions propagate via tombstones (`DeleteFile` RPC + `files.deleted_at`); tombstone GC (per-device acknowledgment) is deferred, so tombstones are kept forever.
+- First-writer-wins conflict detection uses each client's `last_seen_hash`.
+- Deletions propagate via Durable Object tombstones; tombstone garbage collection is deferred, so tombstones are kept forever.
 - Watcher is top-level only; subdirectories are covered by the startup reconcile and are tracked in TODO for recursive watching.
-- gRPC calls are authenticated with per-device bearer tokens (server-side interceptor).
+- HTTP API and SSE connections are authenticated with a bearer token.

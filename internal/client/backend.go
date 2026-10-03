@@ -8,68 +8,15 @@ import (
 	"io"
 	"net/http"
 	"strings"
-
-	"github.com/shivangnagta/data_sync/proto/sync"
 )
 
 type SyncBackend interface {
-	GetSyncPlan(context.Context, []*sync.FileState) ([]*sync.SyncAction, error)
-	Upload(context.Context, *sync.UploadFileMeta, []byte) (*sync.UploadFileResponse, error)
-	Download(context.Context, *sync.SyncAction) (io.ReadCloser, error)
+	GetSyncPlan(context.Context, []*FileState) ([]*SyncAction, error)
+	Upload(context.Context, *UploadFileMeta, []byte) (*UploadFileResponse, error)
+	Download(context.Context, *SyncAction) (io.ReadCloser, error)
 	Delete(context.Context, string, string) error
 	EventsURL() string
 }
-
-type grpcBackend struct{ client *SyncClient }
-
-func (b grpcBackend) GetSyncPlan(ctx context.Context, files []*sync.FileState) ([]*sync.SyncAction, error) {
-	resp, err := b.client.API().GetSyncPlan(b.client.AuthContext(ctx), &sync.GetSyncPlanRequest{LocalFiles: files})
-	if err != nil {
-		return nil, err
-	}
-	return resp.Actions, nil
-}
-
-func (b grpcBackend) Upload(ctx context.Context, meta *sync.UploadFileMeta, content []byte) (*sync.UploadFileResponse, error) {
-	stream, err := b.client.API().UploadFile(b.client.AuthContext(ctx))
-	if err != nil {
-		return nil, err
-	}
-	if err := stream.Send(&sync.UploadFileRequest{Payload: &sync.UploadFileRequest_Meta{Meta: meta}}); err != nil {
-		return nil, err
-	}
-	if err := stream.Send(&sync.UploadFileRequest{Payload: &sync.UploadFileRequest_Data{Data: content}}); err != nil {
-		return nil, err
-	}
-	return stream.CloseAndRecv()
-}
-
-func (b grpcBackend) Download(ctx context.Context, action *sync.SyncAction) (io.ReadCloser, error) {
-	stream, err := b.client.API().DownloadFile(b.client.AuthContext(ctx), &sync.DownloadFileRequest{Path: action.Path})
-	if err != nil {
-		return nil, err
-	}
-	var content bytes.Buffer
-	for {
-		msg, err := stream.Recv()
-		if err == io.EOF {
-			return io.NopCloser(bytes.NewReader(content.Bytes())), nil
-		}
-		if err != nil {
-			return nil, err
-		}
-		if data, ok := msg.Payload.(*sync.DownloadFileResponse_Data); ok {
-			_, _ = content.Write(data.Data)
-		}
-	}
-}
-
-func (b grpcBackend) Delete(ctx context.Context, path, _ string) error {
-	_, err := b.client.API().DeleteFile(b.client.AuthContext(ctx), &sync.DeleteFileRequest{Path: path})
-	return err
-}
-
-func (b grpcBackend) EventsURL() string { return "" }
 
 type HTTPBackend struct {
 	BaseURL string
@@ -77,16 +24,16 @@ type HTTPBackend struct {
 	Client  *http.Client
 }
 
-func (b *HTTPBackend) GetSyncPlan(ctx context.Context, files []*sync.FileState) ([]*sync.SyncAction, error) {
+func (b *HTTPBackend) GetSyncPlan(ctx context.Context, files []*FileState) ([]*SyncAction, error) {
 	var response struct {
 		Actions []httpAction `json:"actions"`
 	}
 	if err := b.doJSON(ctx, http.MethodPost, "/sync/plan", struct {
-		LocalFiles []*sync.FileState `json:"local_files"`
+		LocalFiles []*FileState `json:"local_files"`
 	}{files}, &response); err != nil {
 		return nil, err
 	}
-	actions := make([]*sync.SyncAction, 0, len(response.Actions))
+	actions := make([]*SyncAction, 0, len(response.Actions))
 	for _, action := range response.Actions {
 		if action.Action == "conflict" {
 			return nil, fmt.Errorf("conflict: server has %s", action.Hash)
@@ -96,11 +43,11 @@ func (b *HTTPBackend) GetSyncPlan(ctx context.Context, files []*sync.FileState) 
 	return actions, nil
 }
 
-func (b *HTTPBackend) Upload(ctx context.Context, meta *sync.UploadFileMeta, content []byte) (*sync.UploadFileResponse, error) {
+func (b *HTTPBackend) Upload(ctx context.Context, meta *UploadFileMeta, content []byte) (*UploadFileResponse, error) {
 	if err := b.doBytes(ctx, http.MethodPut, "/files/"+meta.Hash, content, nil); err != nil {
 		return nil, err
 	}
-	var response sync.UploadFileResponse
+	var response UploadFileResponse
 	err := b.doJSON(ctx, http.MethodPost, "/sync/commit", httpCommit{
 		Operation:    "upload",
 		Path:         meta.Path,
@@ -111,7 +58,7 @@ func (b *HTTPBackend) Upload(ctx context.Context, meta *sync.UploadFileMeta, con
 	return &response, err
 }
 
-func (b *HTTPBackend) Download(ctx context.Context, action *sync.SyncAction) (io.ReadCloser, error) {
+func (b *HTTPBackend) Download(ctx context.Context, action *SyncAction) (io.ReadCloser, error) {
 	req, err := b.request(ctx, http.MethodGet, "/files/"+action.Hash, nil)
 	if err != nil {
 		return nil, err
@@ -128,7 +75,7 @@ func (b *HTTPBackend) Download(ctx context.Context, action *sync.SyncAction) (io
 }
 
 func (b *HTTPBackend) Delete(ctx context.Context, path, lastSeenHash string) error {
-	var response sync.UploadFileResponse
+	var response UploadFileResponse
 	err := b.doJSON(ctx, http.MethodPost, "/sync/commit", httpCommit{
 		Operation:    "delete",
 		Path:         path,
@@ -152,12 +99,12 @@ type httpAction struct {
 	Size   int64  `json:"size"`
 }
 
-func (a httpAction) proto() *sync.SyncAction {
-	action := map[string]sync.SyncAction_ActionType{
-		"upload": sync.SyncAction_UPLOAD, "download": sync.SyncAction_DOWNLOAD,
-		"delete": sync.SyncAction_DELETE,
+func (a httpAction) proto() *SyncAction {
+	action := map[string]ActionType{
+		"upload": ActionUpload, "download": ActionDownload,
+		"delete": ActionDelete,
 	}[a.Action]
-	return &sync.SyncAction{Path: a.Path, Action: action, Hash: a.Hash, Size: a.Size}
+	return &SyncAction{Path: a.Path, Action: action, Hash: a.Hash, Size: a.Size}
 }
 
 type httpCommit struct {

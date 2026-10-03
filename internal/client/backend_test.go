@@ -6,8 +6,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-
-	"github.com/shivangnagta/data_sync/proto/sync"
 )
 
 func TestHTTPBackendPlanAndUpload(t *testing.T) {
@@ -36,14 +34,14 @@ func TestHTTPBackendPlanAndUpload(t *testing.T) {
 	defer server.Close()
 
 	backend := &HTTPBackend{BaseURL: server.URL, Token: "secret"}
-	actions, err := backend.GetSyncPlan(context.Background(), []*sync.FileState{{Path: "a.txt"}})
+	actions, err := backend.GetSyncPlan(context.Background(), []*FileState{{Path: "a.txt"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(actions) != 1 || actions[0].Action != sync.SyncAction_UPLOAD {
+	if len(actions) != 1 || actions[0].Action != ActionUpload {
 		t.Fatalf("unexpected actions: %+v", actions)
 	}
-	_, err = backend.Upload(context.Background(), &sync.UploadFileMeta{
+	_, err = backend.Upload(context.Background(), &UploadFileMeta{
 		Path: "a.txt", Hash: "abc", Size: 3,
 	}, []byte("one"))
 	if err != nil {

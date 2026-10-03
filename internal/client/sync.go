@@ -11,11 +11,9 @@ import (
 	"strings"
 
 	"github.com/shivangnagta/data_sync/internal/client/storage"
-	"github.com/shivangnagta/data_sync/proto/sync"
 )
 
 type SyncEngine struct {
-	client  *SyncClient
 	backend SyncBackend
 	token   string
 	db      *sql.DB
@@ -29,10 +27,6 @@ func isIgnored(rel string) bool {
 	base := filepath.Base(rel)
 	return strings.HasPrefix(base, ".sync-tmp-") ||
 		ignoredBase[strings.ToLower(base)]
-}
-
-func NewSyncEngine(c *SyncClient, db *sql.DB) *SyncEngine {
-	return &SyncEngine{client: c, backend: c.Backend(), token: c.Token, db: db}
 }
 
 func NewHTTPBackendEngine(backend *HTTPBackend, db *sql.DB) *SyncEngine {
@@ -64,29 +58,29 @@ func (e *SyncEngine) Sync(ctx context.Context, root string) error {
 		return fmt.Errorf("build manifest: %w", err)
 	}
 
-	req := &sync.GetSyncPlanRequest{}
+	var files []*FileState
 	for _, f := range manifest {
-		req.LocalFiles = append(req.LocalFiles, f)
+		files = append(files, f)
 	}
 
-	actions, err := e.backend.GetSyncPlan(ctx, req.LocalFiles)
+	actions, err := e.backend.GetSyncPlan(ctx, files)
 	if err != nil {
 		return fmt.Errorf("get sync plan: %w", err)
 	}
 
-	fmt.Printf("sync: plan has %d action(s) for %d local file(s)\n", len(actions), len(req.LocalFiles))
+	fmt.Printf("sync: plan has %d action(s) for %d local file(s)\n", len(actions), len(files))
 	for _, action := range actions {
 		fmt.Printf("sync: %s %s\n", action.Action, action.Path)
 		switch action.Action {
-		case sync.SyncAction_UPLOAD:
+		case ActionUpload:
 			if err := e.upload(ctx, root, action.Path); err != nil {
 				return fmt.Errorf("upload %s: %w", action.Path, err)
 			}
-		case sync.SyncAction_DOWNLOAD:
+		case ActionDownload:
 			if err := e.download(ctx, root, action); err != nil {
 				return fmt.Errorf("download %s: %w", action.Path, err)
 			}
-		case sync.SyncAction_DELETE:
+		case ActionDelete:
 			if err := e.deleteLocal(root, action.Path); err != nil {
 				return fmt.Errorf("delete %s: %w", action.Path, err)
 			}
@@ -96,16 +90,16 @@ func (e *SyncEngine) Sync(ctx context.Context, root string) error {
 	return storage.MarkAllCompleted(e.db)
 }
 
-func (e *SyncEngine) buildManifest(root string) (map[string]*sync.FileState, error) {
+func (e *SyncEngine) buildManifest(root string) (map[string]*FileState, error) {
 	tracked, err := storage.ListFiles(e.db)
 	if err != nil {
 		return nil, fmt.Errorf("list tracked files: %w", err)
 	}
 
-	manifest := make(map[string]*sync.FileState, len(tracked))
+	manifest := make(map[string]*FileState, len(tracked))
 	for _, f := range tracked {
 		p := filepath.ToSlash(f.Path)
-		fs := &sync.FileState{Path: p, Size: f.Size, Hash: f.Hash}
+		fs := &FileState{Path: p, Size: f.Size, Hash: f.Hash}
 		lastSeenHash, err := storage.GetLastSeenHash(e.db, p)
 		if err != nil {
 			return nil, err
@@ -151,7 +145,7 @@ func (e *SyncEngine) upload(ctx context.Context, root, path string) error {
 		return err
 	}
 
-	resp, err := e.backend.Upload(ctx, &sync.UploadFileMeta{Path: path, Size: size, Hash: hash, LastSeenHash: lastSeenHash}, content)
+	resp, err := e.backend.Upload(ctx, &UploadFileMeta{Path: path, Size: size, Hash: hash, LastSeenHash: lastSeenHash}, content)
 	if err != nil {
 		return err
 	}
@@ -161,7 +155,7 @@ func (e *SyncEngine) upload(ctx context.Context, root, path string) error {
 	return storage.MarkUploaded(e.db, path, hash)
 }
 
-func (e *SyncEngine) download(ctx context.Context, root string, action *sync.SyncAction) error {
+func (e *SyncEngine) download(ctx context.Context, root string, action *SyncAction) error {
 	full := filepath.Join(root, filepath.FromSlash(action.Path))
 	stream, err := e.backend.Download(ctx, action)
 	if err != nil {

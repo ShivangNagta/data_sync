@@ -54,24 +54,10 @@ func main() {
 	}
 	log.Printf("syncing folder: %s", folder)
 
-	// Connection + device registration/token persistence.
-	var engine *client.SyncEngine
-	if getenv("SYNC_BACKEND", "grpc") == "http" {
-		engine = client.NewHTTPBackendEngine(&client.HTTPBackend{
-			BaseURL: getenv("SYNC_HTTP", "http://localhost:8787"),
-			Token:   getenv("SYNC_TOKEN", ""),
-		}, db)
-	} else {
-		sc, err := client.NewSyncClient(client.ClientConfig{
-			Addr:  getenv("SYNC_ADDR", "localhost:54321"),
-			Token: getenv("SYNC_TOKEN", ""),
-		})
-		if err != nil {
-			log.Fatalf("client: %v", err)
-		}
-		defer sc.Close()
-		engine = client.NewSyncEngine(sc, db)
-	}
+	engine := client.NewHTTPBackendEngine(&client.HTTPBackend{
+		BaseURL: getenv("SYNC_HTTP", "http://localhost:8787"),
+		Token:   getenv("SYNC_TOKEN", ""),
+	}, db)
 
 	// Reconcile disk vs DB at startup to catch anything fsnotify missed
 	// (offline edits, deletions without events, files created while stopped).
@@ -107,9 +93,6 @@ func main() {
 	}
 
 	httpURL := engine.EventsURL()
-	if httpURL == "" {
-		httpURL = getenv("SYNC_HTTP", "http://localhost:8080") + "/events"
-	}
 	go engine.ListenEvents(ctx, httpURL, func() {
 		if err := engine.Sync(ctx, folder); err != nil {
 			log.Printf("sync failed: %v", err)
