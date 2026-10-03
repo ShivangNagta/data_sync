@@ -12,3 +12,4 @@ cmd/synctest/
 /sync-client-desktop
 sync_token.json
 worker/
+.archify
