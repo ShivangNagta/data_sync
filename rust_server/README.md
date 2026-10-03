@@ -1,7 +1,7 @@
 # Cloudflare sync v2
 
-This is the isolated Rust/WASM Cloudflare Worker implementation. The working
-Go implementation remains the v1 reference and is not modified by this project.
+This is the Rust/WASM Cloudflare Worker used by the Go client. It is the
+project's only sync backend.
 
 ## Current slice
 

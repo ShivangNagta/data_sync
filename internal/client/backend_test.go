@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +17,15 @@ func TestHTTPBackendPlanAndUpload(t *testing.T) {
 		}
 		switch r.URL.Path {
 		case "/v2/sync/plan":
+			var request struct {
+				LocalFiles []*FileState `json:"local_files"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				t.Fatal(err)
+			}
+			if request.LocalFiles == nil {
+				t.Fatal("local_files must be an array")
+			}
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"actions":[{"path":"a.txt","action":"upload","hash":"abc","size":3}]}`))
 		case "/v2/files/abc":
@@ -34,7 +44,7 @@ func TestHTTPBackendPlanAndUpload(t *testing.T) {
 	defer server.Close()
 
 	backend := &HTTPBackend{BaseURL: server.URL, Token: "secret"}
-	actions, err := backend.GetSyncPlan(context.Background(), []*FileState{{Path: "a.txt"}})
+	actions, err := backend.GetSyncPlan(context.Background(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

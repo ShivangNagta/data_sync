@@ -28,6 +28,9 @@ func (b *HTTPBackend) GetSyncPlan(ctx context.Context, files []*FileState) ([]*S
 	var response struct {
 		Actions []httpAction `json:"actions"`
 	}
+	if files == nil {
+		files = []*FileState{}
+	}
 	if err := b.doJSON(ctx, http.MethodPost, "/sync/plan", struct {
 		LocalFiles []*FileState `json:"local_files"`
 	}{files}, &response); err != nil {
