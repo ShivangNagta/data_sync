@@ -267,7 +267,17 @@ async fn plan(sql: &SqlStorage, req: &mut Request) -> Result<Response> {
                 size: local.size,
             }),
             Some(remote) if remote.deleted != 0 => {
-                if !local.hash.is_empty() {
+                if !local.hash.is_empty()
+                    && !local.last_seen_hash.is_empty()
+                    && local.hash == local.last_seen_hash
+                {
+                    actions.push(SyncAction {
+                        path: local.path.clone(),
+                        action: "delete",
+                        hash: String::new(),
+                        size: 0,
+                    });
+                } else if !local.hash.is_empty() {
                     actions.push(SyncAction {
                         path: local.path.clone(),
                         action: "upload",
