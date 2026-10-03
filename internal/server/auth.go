@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"net/http"
 	"os"
 	"strings"
 
@@ -39,6 +40,17 @@ func (a *AuthInterceptor) Stream() grpc.StreamServerInterceptor {
 		}
 		return handler(srv, &wrappedStream{ss, ctx})
 	}
+}
+
+func (a *AuthInterceptor) HTTP(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if !ok || a.token == "" || strings.TrimSpace(token) != a.token {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (a *AuthInterceptor) authenticate(ctx context.Context) (context.Context, error) {

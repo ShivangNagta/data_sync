@@ -96,6 +96,11 @@ func (e *SyncEngine) buildManifest(root string) (map[string]*sync.FileState, err
 	for _, f := range tracked {
 		p := filepath.ToSlash(f.Path)
 		fs := &sync.FileState{Path: p, Size: f.Size, Hash: f.Hash}
+		lastSeenHash, err := storage.GetLastSeenHash(e.db, p)
+		if err != nil {
+			return nil, err
+		}
+		fs.LastSeenHash = lastSeenHash
 
 		pendingOp, err := storage.PendingOpType(e.db, p)
 		if err != nil {
@@ -159,7 +164,7 @@ func (e *SyncEngine) upload(ctx context.Context, root, path string) error {
 	if resp.Conflict {
 		return fmt.Errorf("conflict: server has %s", resp.CurrentHash)
 	}
-	return nil
+	return storage.MarkUploaded(e.db, path, hash)
 }
 
 func (e *SyncEngine) download(ctx context.Context, root string, action *sync.SyncAction) error {

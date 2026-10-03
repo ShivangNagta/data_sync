@@ -23,7 +23,12 @@ func NewService(app *SyncService, auth *AuthInterceptor) *Service {
 func (s *Service) GetSyncPlan(ctx context.Context, req *sync.GetSyncPlanRequest) (*sync.GetSyncPlanResponse, error) {
 	manifest := make(map[string]FileState, len(req.LocalFiles))
 	for _, f := range req.LocalFiles {
-		manifest[f.Path] = FileState{Path: f.Path, Size: f.Size, Hash: f.Hash}
+		manifest[f.Path] = FileState{
+			Path:         f.Path,
+			Size:         f.Size,
+			Hash:         f.Hash,
+			LastSeenHash: f.LastSeenHash,
+		}
 	}
 
 	actions, err := s.app.ComputeSyncPlan(ctx, manifest)
@@ -72,9 +77,9 @@ func (s *Service) UploadFile(stream sync.SyncService_UploadFileServer) error {
 	if err := s.app.ApplyUpload(stream.Context(), meta.Path, data, meta.Hash, meta.LastSeenHash); err != nil {
 		if err.Error()[:8] == "conflict" {
 			return stream.SendAndClose(&sync.UploadFileResponse{
-				Accepted:     false,
-				Conflict:     true,
-				CurrentHash:  meta.Hash,
+				Accepted:    false,
+				Conflict:    true,
+				CurrentHash: meta.Hash,
 			})
 		}
 		return status.Errorf(codes.Internal, "apply upload: %v", err)

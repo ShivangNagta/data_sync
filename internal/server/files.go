@@ -72,6 +72,22 @@ func (r *FileRepository) UpsertFile(ctx context.Context, path, hash string, size
 	return nil
 }
 
+func (r *FileRepository) UpdateFileIfHash(ctx context.Context, path, oldHash, hash string, size int64) (bool, error) {
+	result, err := r.db.ExecContext(ctx,
+		`UPDATE files SET hash = ?, size = ?, deleted_at = NULL
+		 WHERE path = ? AND hash = ? AND deleted_at IS NULL`,
+		hash, size, path, oldHash,
+	)
+	if err != nil {
+		return false, fmt.Errorf("compare-and-swap file: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("compare-and-swap rows affected: %w", err)
+	}
+	return rows == 1, nil
+}
+
 func (r *FileRepository) MarkDeleted(ctx context.Context, path string) error {
 	_, err := r.db.ExecContext(ctx,
 		"UPDATE files SET deleted_at = CURRENT_TIMESTAMP WHERE path = ?",

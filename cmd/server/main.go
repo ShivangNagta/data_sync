@@ -55,7 +55,11 @@ func main() {
 	}
 	if *clearDB {
 		log.Print("clearing metadata DB...")
-		if err := srv.ClearDatabase(db); err != nil {
+		clear := srv.ClearDatabase
+		if *reset {
+			clear = srv.ResetDatabase
+		}
+		if err := clear(db); err != nil {
 			log.Fatalf("clear db: %v", err)
 		}
 		log.Print("metadata DB cleared")
@@ -79,7 +83,7 @@ func main() {
 
 	go func() {
 		mux := http.NewServeMux()
-		mux.Handle("/events", hub)
+		mux.Handle("/events", auth.HTTP(hub))
 		mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 			w.Write([]byte("ok"))
 		})

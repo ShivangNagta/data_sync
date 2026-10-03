@@ -26,9 +26,10 @@ type SyncAction struct {
 }
 
 type FileState struct {
-	Path string
-	Size int64
-	Hash string
+	Path         string
+	Size         int64
+	Hash         string
+	LastSeenHash string
 }
 
 type Uploader struct {
@@ -55,12 +56,16 @@ func (s *SyncService) ComputeSyncPlan(ctx context.Context, clientFiles map[strin
 		}
 
 		if serverFile.Hash != clientState.Hash {
-			actions = append(actions, SyncAction{
-				Path:   path,
-				Action: "download",
-				Hash:   serverFile.Hash,
-				Size:   serverFile.Size,
-			})
+			if clientState.LastSeenHash == serverFile.Hash {
+				actions = append(actions, SyncAction{Path: path, Action: "upload"})
+			} else {
+				actions = append(actions, SyncAction{
+					Path:   path,
+					Action: "download",
+					Hash:   serverFile.Hash,
+					Size:   serverFile.Size,
+				})
+			}
 		}
 	}
 
@@ -101,7 +106,22 @@ func (s *SyncService) ApplyUpload(ctx context.Context, path string, data []byte,
 		return fmt.Errorf("store in r2: %w", err)
 	}
 
-	if err := s.files.UpsertFile(ctx, path, hash, int64(len(data))); err != nil {
+	if exists && !found.IsDeleted() {
+		updated, err := s.files.UpdateFileIfHash(ctx, path, lastSeenHash, hash, int64(len(data)))
+		if err != nil {
+			return err
+		}
+		if !updated {
+			current, currentExists, err := s.files.GetFileByPath(ctx, path)
+			if err != nil {
+				return fmt.Errorf("get current file: %w", err)
+			}
+			if currentExists {
+				return fmt.Errorf("conflict: current hash is %s", current.Hash)
+			}
+			return errors.New("conflict: file no longer exists")
+		}
+	} else if err := s.files.UpsertFile(ctx, path, hash, int64(len(data))); err != nil {
 		return fmt.Errorf("upsert file: %w", err)
 	}
 
@@ -119,7 +139,7 @@ func (s *SyncService) ApplyDelete(ctx context.Context, path string) error {
 		return nil
 	}
 
-	if err := s.r2.Delete(ctx, path); err != nil {
+	if err := s.r2.Delete(ctx, found.Hash); err != nil {
 		return fmt.Errorf("delete from r2: %w", err)
 	}
 
@@ -141,7 +161,7 @@ func (s *SyncService) FetchFile(ctx context.Context, path string) (data []byte, 
 		return nil, "", 0, errors.New("file not found")
 	}
 
-	data, err = s.r2.Get(ctx, path)
+	data, err = s.r2.Get(ctx, found.Hash)
 	if err != nil {
 		return nil, "", 0, fmt.Errorf("get from r2: %w", err)
 	}

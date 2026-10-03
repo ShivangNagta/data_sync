@@ -137,6 +137,18 @@ func MarkDownloaded(db *sql.DB, path string, size int64, hash string) error {
 	return nil
 }
 
+func MarkUploaded(db *sql.DB, path, hash string) error {
+	_, err := db.Exec(`
+		UPDATE local_files
+		SET state = 'synced', hash = ?, last_seen_hash = ?
+		WHERE path = ?
+	`, hash, hash, path)
+	if err != nil {
+		return fmt.Errorf("mark uploaded: %w", err)
+	}
+	return nil
+}
+
 func GetLastSeenHash(db *sql.DB, path string) (string, error) {
 	var hash string
 	err := db.QueryRow("SELECT last_seen_hash FROM local_files WHERE path = ?", path).Scan(&hash)
