@@ -12,7 +12,7 @@ flowchart TB
         Reconcile["Startup reconcile<br/>(one-shot, recursive disk-vs-DB)"]
         LocalDB["SQLite DB<br/>local_files + pending_operations"]
         Manifest["DB-driven manifest<br/>(re-hash pending files only)"]
-        SyncEngine["Sync Engine<br/>(ticker, every SYNC_INTERVAL)"]
+        SyncEngine["Sync Engine<br/>(event-triggered)"]
 
         Watcher -->|"RecordChange"| LocalDB
         Reconcile -->|"record create/modify/delete"| LocalDB

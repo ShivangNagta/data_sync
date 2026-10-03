@@ -19,13 +19,14 @@ import (
 // folder : the folder that needs to be watched
 // fswatch : watcher object from the fsnotify library
 type Watcher struct {
-	db      *sql.DB
-	folder  string
-	fswatch *fsnotify.Watcher
+	db       *sql.DB
+	folder   string
+	fswatch  *fsnotify.Watcher
+	onChange func()
 }
 
 // creates a new Watcher object
-func NewWatcher(db *sql.DB, folder string) (*Watcher, error) {
+func NewWatcher(db *sql.DB, folder string, onChange ...func()) (*Watcher, error) {
 	abs, err := filepath.Abs(folder)
 	if err != nil {
 		return nil, fmt.Errorf("abs folder: %w", err)
@@ -36,10 +37,16 @@ func NewWatcher(db *sql.DB, folder string) (*Watcher, error) {
 		return nil, fmt.Errorf("create watcher: %w", err)
 	}
 
+	var callback func()
+	if len(onChange) > 0 {
+		callback = onChange[0]
+	}
+
 	return &Watcher{
-		db:      db,
-		folder:  abs,
-		fswatch: fswatch,
+		db:       db,
+		folder:   abs,
+		fswatch:  fswatch,
+		onChange: callback,
 	}, nil
 }
 
@@ -99,6 +106,10 @@ func (w *Watcher) watchEvents() {
 		err = storage.RecordChange(w.db, w.folder, rel, opType)
 		if err != nil {
 			fmt.Printf("Error recording change: %v\n", err)
+			continue
+		}
+		if w.onChange != nil {
+			go w.onChange()
 		}
 	}
 }

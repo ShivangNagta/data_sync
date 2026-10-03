@@ -11,7 +11,7 @@ flowchart TB
         Reconcile["Startup reconcile<br/>(one-shot, recursive disk-vs-DB)"]
         LocalDB["SQLite DB<br/>local_files + pending_operations"]
         Manifest["DB-driven manifest<br/>(re-hash pending files only)"]
-        SyncEngine["Sync Engine<br/>(ticker, every SYNC_INTERVAL)"]
+        SyncEngine["Sync Engine<br/>(event-triggered)"]
 
         Watcher -->|"RecordChange"| LocalDB
         Reconcile -->|"record create/modify/delete"| LocalDB
@@ -38,7 +38,7 @@ flowchart TB
 
 - **Client** watches a folder recursively with fsnotify. Every event is written to a local SQLite DB (`local_files` + `pending_operations`) as a create/modify/delete op, along with the file's size and SHA-256 hash.
 - At **startup** a one-shot, recursive reconcile walks disk vs DB to catch anything the watcher missed while the process was down.
-- On every **sync pass** (initially and every `SYNC_INTERVAL`, default `2s`) the client builds a *DB-driven manifest* (re-hashing only files with pending ops), sends it to the Worker, and executes the returned plan. A file with a pending local edit is always **uploaded, never overwritten** by a download or delete (client-push-wins).
+- On every **sync pass** (initially and after each local filesystem event) the client builds a *DB-driven manifest* (re-hashing only files with pending ops), sends it to the Worker, and executes the returned plan. A file with a pending local edit is always **uploaded, never overwritten** by a download or delete (client-push-wins).
 - Local deletions are propagated explicitly: the client commits a delete operation to the Worker, which stores a tombstone in Durable Object SQLite. The Worker then tells other clients to DELETE it, never offers a tombstoned file as a download, and new devices never receive it.
 - The **Rust Worker** computes the plan by comparing the client's manifest against Durable Object SQLite metadata. Bytes go to R2 under content-addressed keys, so files are immutable and deduplicated. Upload and download are whole-file HTTP transfers written atomically on the client.
 

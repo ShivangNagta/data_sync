@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"time"
 
 	"github.com/joho/godotenv"
 	_ "modernc.org/sqlite"
@@ -20,7 +19,7 @@ import (
 func main() {
 	_ = godotenv.Load()
 
-	once := flag.Bool("once", false, "run a single sync cycle then exit (no watcher, no ticker)")
+	once := flag.Bool("once", false, "run a single sync cycle then exit")
 	flag.Parse()
 
 	// Local SQLite database for pending operations tracking.
@@ -81,7 +80,11 @@ func main() {
 		return
 	}
 
-	w, err := client.NewWatcher(db, folder)
+	w, err := client.NewWatcher(db, folder, func() {
+		if err := engine.Sync(ctx, folder); err != nil {
+			log.Printf("sync failed: %v", err)
+		}
+	})
 	if err != nil {
 		log.Fatalf("watcher: %v", err)
 	}
@@ -100,15 +103,7 @@ func main() {
 		}
 	})
 
-	interval := syncInterval()
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	for range ticker.C {
-		if err := engine.Sync(ctx, folder); err != nil {
-			log.Printf("sync failed: %v", err)
-		}
-	}
-
+	select {}
 }
 
 func migrate(db *sql.DB) error {
@@ -131,17 +126,6 @@ func getenv(k, def string) string {
 		return v
 	}
 	return def
-}
-
-func syncInterval() time.Duration {
-	const defaultInterval = 2 * time.Second
-	value := getenv("SYNC_INTERVAL", defaultInterval.String())
-	interval, err := time.ParseDuration(value)
-	if err != nil || interval <= 0 {
-		log.Printf("invalid SYNC_INTERVAL %q; using %s", value, defaultInterval)
-		return defaultInterval
-	}
-	return interval
 }
 
 func getDuration(s string) int {
