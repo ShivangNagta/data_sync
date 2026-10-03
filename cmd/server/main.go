@@ -70,11 +70,9 @@ func main() {
 		return
 	}
 
-	devices := srv.NewDeviceRepository(db)
 	files := srv.NewFileRepository(db)
-
 	app := srv.NewSyncService(files, r2)
-	auth := srv.NewAuthInterceptor(devices)
+	auth := srv.NewAuthInterceptor()
 	service := srv.NewService(app, auth)
 
 	lis, err := net.Listen("tcp", addr)
@@ -95,7 +93,6 @@ func main() {
 
 func migrate(db *sql.DB) error {
 	stmts := []string{
-		srv.CreateDevicesTable,
 		srv.CreateFilesTable,
 		srv.CreateFilesPathIndex,
 	}

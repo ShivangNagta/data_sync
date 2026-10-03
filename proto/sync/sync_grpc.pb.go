@@ -19,18 +19,16 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	SyncService_RegisterDevice_FullMethodName = "/sync.SyncService/RegisterDevice"
-	SyncService_GetSyncPlan_FullMethodName    = "/sync.SyncService/GetSyncPlan"
-	SyncService_UploadFile_FullMethodName     = "/sync.SyncService/UploadFile"
-	SyncService_DownloadFile_FullMethodName   = "/sync.SyncService/DownloadFile"
-	SyncService_DeleteFile_FullMethodName     = "/sync.SyncService/DeleteFile"
+	SyncService_GetSyncPlan_FullMethodName  = "/sync.SyncService/GetSyncPlan"
+	SyncService_UploadFile_FullMethodName   = "/sync.SyncService/UploadFile"
+	SyncService_DownloadFile_FullMethodName = "/sync.SyncService/DownloadFile"
+	SyncService_DeleteFile_FullMethodName   = "/sync.SyncService/DeleteFile"
 )
 
 // SyncServiceClient is the client API for SyncService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type SyncServiceClient interface {
-	RegisterDevice(ctx context.Context, in *RegisterDeviceRequest, opts ...grpc.CallOption) (*RegisterDeviceResponse, error)
 	GetSyncPlan(ctx context.Context, in *GetSyncPlanRequest, opts ...grpc.CallOption) (*GetSyncPlanResponse, error)
 	UploadFile(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[UploadFileRequest, UploadFileResponse], error)
 	DownloadFile(ctx context.Context, in *DownloadFileRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[DownloadFileResponse], error)
@@ -43,16 +41,6 @@ type syncServiceClient struct {
 
 func NewSyncServiceClient(cc grpc.ClientConnInterface) SyncServiceClient {
 	return &syncServiceClient{cc}
-}
-
-func (c *syncServiceClient) RegisterDevice(ctx context.Context, in *RegisterDeviceRequest, opts ...grpc.CallOption) (*RegisterDeviceResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(RegisterDeviceResponse)
-	err := c.cc.Invoke(ctx, SyncService_RegisterDevice_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
 }
 
 func (c *syncServiceClient) GetSyncPlan(ctx context.Context, in *GetSyncPlanRequest, opts ...grpc.CallOption) (*GetSyncPlanResponse, error) {
@@ -111,7 +99,6 @@ func (c *syncServiceClient) DeleteFile(ctx context.Context, in *DeleteFileReques
 // All implementations must embed UnimplementedSyncServiceServer
 // for forward compatibility.
 type SyncServiceServer interface {
-	RegisterDevice(context.Context, *RegisterDeviceRequest) (*RegisterDeviceResponse, error)
 	GetSyncPlan(context.Context, *GetSyncPlanRequest) (*GetSyncPlanResponse, error)
 	UploadFile(grpc.ClientStreamingServer[UploadFileRequest, UploadFileResponse]) error
 	DownloadFile(*DownloadFileRequest, grpc.ServerStreamingServer[DownloadFileResponse]) error
@@ -126,9 +113,6 @@ type SyncServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedSyncServiceServer struct{}
 
-func (UnimplementedSyncServiceServer) RegisterDevice(context.Context, *RegisterDeviceRequest) (*RegisterDeviceResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method RegisterDevice not implemented")
-}
 func (UnimplementedSyncServiceServer) GetSyncPlan(context.Context, *GetSyncPlanRequest) (*GetSyncPlanResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetSyncPlan not implemented")
 }
@@ -160,24 +144,6 @@ func RegisterSyncServiceServer(s grpc.ServiceRegistrar, srv SyncServiceServer) {
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&SyncService_ServiceDesc, srv)
-}
-
-func _SyncService_RegisterDevice_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(RegisterDeviceRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(SyncServiceServer).RegisterDevice(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: SyncService_RegisterDevice_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(SyncServiceServer).RegisterDevice(ctx, req.(*RegisterDeviceRequest))
-	}
-	return interceptor(ctx, in, info, handler)
 }
 
 func _SyncService_GetSyncPlan_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -241,10 +207,6 @@ var SyncService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "sync.SyncService",
 	HandlerType: (*SyncServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
-		{
-			MethodName: "RegisterDevice",
-			Handler:    _SyncService_RegisterDevice_Handler,
-		},
 		{
 			MethodName: "GetSyncPlan",
 			Handler:    _SyncService_GetSyncPlan_Handler,

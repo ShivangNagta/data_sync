@@ -57,15 +57,13 @@ func main() {
 
 	// Connection + device registration/token persistence.
 	sc, err := client.NewSyncClient(client.ClientConfig{
-		Addr:      getenv("SYNC_ADDR", "localhost:54321"),
-		Name:      getenv("DEVICE_NAME", "default"),
-		TokenFile: getenv("SYNC_TOKEN_FILE", "./sync_token.json"),
+		Addr:  getenv("SYNC_ADDR", "localhost:54321"),
+		Token: getenv("SYNC_TOKEN", ""),
 	})
 	if err != nil {
 		log.Fatalf("client: %v", err)
 	}
 	defer sc.Close()
-	log.Printf("device registered: %s", sc.DeviceID)
 
 	engine := client.NewSyncEngine(sc, db)
 

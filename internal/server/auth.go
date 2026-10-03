@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"os"
 	"strings"
 
 	"google.golang.org/grpc"
@@ -12,24 +13,16 @@ import (
 
 type deviceIDKey struct{}
 
-// AuthInterceptor authenticates incoming RPCs. It runs before each handler,
-// resolving the bearer token to a device and injecting its ID into context.
-// RegisterDevice is excluded since no token exists yet on first contact.
 type AuthInterceptor struct {
-	devices *DeviceRepository
+	token string
 }
 
-func NewAuthInterceptor(devices *DeviceRepository) *AuthInterceptor {
-	return &AuthInterceptor{devices: devices}
+func NewAuthInterceptor() *AuthInterceptor {
+	return &AuthInterceptor{token: os.Getenv("SYNC_TOKEN")}
 }
 
-// Unary returns a unary server interceptor used for non-streaming RPCs.
 func (a *AuthInterceptor) Unary() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		if info.FullMethod == "/sync.SyncService/RegisterDevice" {
-			return handler(ctx, req)
-		}
-
 		ctx, err := a.authenticate(ctx)
 		if err != nil {
 			return nil, err
@@ -38,13 +31,8 @@ func (a *AuthInterceptor) Unary() grpc.UnaryServerInterceptor {
 	}
 }
 
-// Stream returns a stream server interceptor used for streaming RPCs.
 func (a *AuthInterceptor) Stream() grpc.StreamServerInterceptor {
 	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-		if info.FullMethod == "/sync.SyncService/RegisterDevice" {
-			return handler(srv, ss)
-		}
-
 		ctx, err := a.authenticate(ss.Context())
 		if err != nil {
 			return err
@@ -58,19 +46,12 @@ func (a *AuthInterceptor) authenticate(ctx context.Context) (context.Context, er
 	if !ok {
 		return nil, status.Error(codes.Unauthenticated, "missing bearer token")
 	}
-
-	deviceID, found, err := a.devices.GetDeviceByToken(ctx, token)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "auth lookup: %v", err)
-	}
-	if !found {
+	if a.token == "" || token != a.token {
 		return nil, status.Error(codes.Unauthenticated, "invalid token")
 	}
-
-	return context.WithValue(ctx, deviceIDKey{}, deviceID), nil
+	return context.WithValue(ctx, deviceIDKey{}, "device"), nil
 }
 
-// bearerToken extracts the token from an "authorization: bearer <token>" header.
 func bearerToken(ctx context.Context) (string, bool) {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
@@ -87,7 +68,6 @@ func bearerToken(ctx context.Context) (string, bool) {
 	return strings.TrimSpace(parts[1]), true
 }
 
-// UploaderFrom reads the authenticated device ID from the context.
 func UploaderFrom(ctx context.Context) (Uploader, bool) {
 	id, ok := ctx.Value(deviceIDKey{}).(string)
 	if !ok || id == "" {
@@ -96,8 +76,6 @@ func UploaderFrom(ctx context.Context) (Uploader, bool) {
 	return Uploader{DeviceID: id}, true
 }
 
-// wrappedStream overrides Context to pass the authenticated context
-// into stream handlers.
 type wrappedStream struct {
 	grpc.ServerStream
 	ctx context.Context
