@@ -9,8 +9,25 @@ Go implementation remains the v1 reference and is not modified by this project.
 - `/v2/*` requires `Authorization: Bearer <SYNC_TOKEN>`.
 - `PUT`, `GET`, and `DELETE /v2/files/:hash` provide content-addressed R2
   operations under the `files/` prefix.
-- `SyncNamespace` is the first Durable Object binding; sync metadata and
-  compare-and-swap behavior will be added in the next slice.
+- `POST /v2/sync/plan` accepts `{ "local_files": [...] }` and returns upload,
+  download, delete, or conflict actions.
+- `POST /v2/sync/commit` accepts an upload or delete mutation and applies
+  first-writer-wins compare-and-swap using `last_seen_hash`.
+- `SyncNamespace` stores file metadata in SQLite. The current namespace is
+  named `default`; namespace partitioning can be added when authentication
+  supports multiple users.
+
+Example commit:
+
+```json
+{
+  "operation": "upload",
+  "path": "docs/readme.txt",
+  "hash": "sha256-hash",
+  "size": 42,
+  "last_seen_hash": "previous-sha256-hash"
+}
+```
 
 ## Local checks
 
