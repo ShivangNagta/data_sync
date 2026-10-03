@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -189,6 +190,77 @@ func (e *SyncEngine) deleteLocal(root, path string) error {
 		return err
 	}
 	return storage.Untrack(e.db, path)
+}
+
+func (e *SyncEngine) StartupScan(root string) error {
+	tracked, err := storage.ListFiles(e.db)
+	if err != nil {
+		return fmt.Errorf("list tracked: %w", err)
+	}
+	trackedSet := make(map[string]bool, len(tracked))
+	for _, f := range tracked {
+		trackedSet[filepath.ToSlash(f.Path)] = true
+	}
+
+	err = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || !d.Type().IsRegular() {
+			return nil
+		}
+		rel, err := filepath.Rel(root, p)
+		if err != nil {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
+		if isIgnored(rel) {
+			return nil
+		}
+
+		_, hash, err := storage.HashFileContent(p)
+		if err != nil {
+			return err
+		}
+
+		if !trackedSet[rel] {
+			if err := storage.RecordChange(e.db, root, rel, "create"); err != nil {
+				return fmt.Errorf("record create %s: %w", rel, err)
+			}
+		} else {
+			for _, f := range tracked {
+				if filepath.ToSlash(f.Path) == rel && f.Hash != hash {
+					if err := storage.RecordChange(e.db, root, rel, "modify"); err != nil {
+						return fmt.Errorf("record modify %s: %w", rel, err)
+					}
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("walk root: %w", err)
+	}
+
+	onDisk := make(map[string]bool)
+	filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !d.Type().IsRegular() {
+			return nil
+		}
+		rel, _ := filepath.Rel(root, p)
+		onDisk[filepath.ToSlash(rel)] = true
+		return nil
+	})
+	for _, f := range tracked {
+		p := filepath.ToSlash(f.Path)
+		if !onDisk[p] {
+			if err := storage.RecordChange(e.db, root, p, "delete"); err != nil {
+				return fmt.Errorf("record delete %s: %w", p, err)
+			}
+		}
+	}
+
+	return nil
 }
 
 func (e *SyncEngine) deleteRemote(ctx context.Context, path string) error {

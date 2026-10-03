@@ -69,10 +69,10 @@ func main() {
 	// Reconcile disk vs DB at startup to catch anything fsnotify missed
 	// (offline edits, deletions without events, files created while stopped).
 	// This is the rare full-scan safety net; the steady-state path is DB-driven.
-	if err := client.Reconcile(db, folder); err != nil {
-		log.Printf("reconcile failed: %v", err)
+	if err := engine.StartupScan(folder); err != nil {
+		log.Printf("startup scan failed: %v", err)
 	} else {
-		log.Printf("reconcile done")
+		log.Printf("startup scan done")
 	}
 
 	ctx := context.Background()
