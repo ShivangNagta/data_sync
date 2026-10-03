@@ -373,6 +373,7 @@ type UploadFileMeta struct {
 	Path          string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
 	Size          int64                  `protobuf:"varint,2,opt,name=size,proto3" json:"size,omitempty"`
 	Hash          string                 `protobuf:"bytes,3,opt,name=hash,proto3" json:"hash,omitempty"`
+	LastSeenHash  string                 `protobuf:"bytes,4,opt,name=last_seen_hash,json=lastSeenHash,proto3" json:"last_seen_hash,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -424,6 +425,13 @@ func (x *UploadFileMeta) GetSize() int64 {
 func (x *UploadFileMeta) GetHash() string {
 	if x != nil {
 		return x.Hash
+	}
+	return ""
+}
+
+func (x *UploadFileMeta) GetLastSeenHash() string {
+	if x != nil {
+		return x.LastSeenHash
 	}
 	return ""
 }
@@ -792,11 +800,12 @@ const file_proto_sync_sync_proto_rawDesc = "" +
 	"\x11UploadFileRequest\x12*\n" +
 	"\x04meta\x18\x01 \x01(\v2\x14.sync.UploadFileMetaH\x00R\x04meta\x12\x14\n" +
 	"\x04data\x18\x02 \x01(\fH\x00R\x04dataB\t\n" +
-	"\apayload\"L\n" +
+	"\apayload\"r\n" +
 	"\x0eUploadFileMeta\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x12\n" +
 	"\x04size\x18\x02 \x01(\x03R\x04size\x12\x12\n" +
-	"\x04hash\x18\x03 \x01(\tR\x04hash\"o\n" +
+	"\x04hash\x18\x03 \x01(\tR\x04hash\x12$\n" +
+	"\x0elast_seen_hash\x18\x04 \x01(\tR\flastSeenHash\"o\n" +
 	"\x12UploadFileResponse\x12\x1a\n" +
 	"\baccepted\x18\x01 \x01(\bR\baccepted\x12\x1a\n" +
 	"\bconflict\x18\x02 \x01(\bR\bconflict\x12!\n" +

@@ -82,12 +82,21 @@ func (s *SyncService) ComputeSyncPlan(ctx context.Context, clientFiles map[strin
 	return actions, nil
 }
 
-func (s *SyncService) ApplyUpload(ctx context.Context, path string, data []byte, hash string) error {
+func (s *SyncService) ApplyUpload(ctx context.Context, path string, data []byte, hash string, lastSeenHash string) error {
 	if err := verifyHash(data, hash); err != nil {
 		return err
 	}
 
-	if err := s.r2.Put(ctx, path, data); err != nil {
+	found, exists, err := s.files.GetFileByPath(ctx, path)
+	if err != nil {
+		return fmt.Errorf("get file: %w", err)
+	}
+
+	if exists && !found.IsDeleted() && found.Hash != lastSeenHash {
+		return fmt.Errorf("conflict: current hash is %s", found.Hash)
+	}
+
+	if err := s.r2.Put(ctx, hash, data); err != nil {
 		return fmt.Errorf("store in r2: %w", err)
 	}
 

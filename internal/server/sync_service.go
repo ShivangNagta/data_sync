@@ -69,7 +69,14 @@ func (s *Service) UploadFile(stream sync.SyncService_UploadFileServer) error {
 		return status.Error(codes.InvalidArgument, "missing upload metadata")
 	}
 
-	if err := s.app.ApplyUpload(stream.Context(), meta.Path, data, meta.Hash); err != nil {
+	if err := s.app.ApplyUpload(stream.Context(), meta.Path, data, meta.Hash, meta.LastSeenHash); err != nil {
+		if err.Error()[:8] == "conflict" {
+			return stream.SendAndClose(&sync.UploadFileResponse{
+				Accepted:     false,
+				Conflict:     true,
+				CurrentHash:  meta.Hash,
+			})
+		}
 		return status.Errorf(codes.Internal, "apply upload: %v", err)
 	}
 
