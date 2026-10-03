@@ -11,3 +11,4 @@ cmd/synctest/
 /sync-server
 /sync-client-desktop
 sync_token.json
+worker/

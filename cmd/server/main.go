@@ -17,7 +17,6 @@ import (
 )
 
 func main() {
-	// Load .env if present
 	_ = godotenv.Load()
 
 	clearDB := flag.Bool("clear-db", false, "delete all rows from the metadata DB then exit")
@@ -27,10 +26,9 @@ func main() {
 
 	addr := getenv("SYNC_LISTEN", ":54321")
 
-	// Metadata database (Turso via libsql, local replica)
 	libsqlURL := os.Getenv("TURSO_URL")
 	if libsqlURL == "" {
-		log.Fatal("TURSO_URL is required (e.g. libsql://your-db.turso.io?...&authToken=...)")
+		log.Fatal("TURSO_URL is required")
 	}
 	db, err := sql.Open("libsql", libsqlURL)
 	if err != nil {
@@ -41,7 +39,6 @@ func main() {
 		log.Fatalf("migrate: %v", err)
 	}
 
-	// Byte store (Cloudflare R2)
 	r2, err := srv.NewR2Client(
 		os.Getenv("R2_ENDPOINT"),
 		os.Getenv("R2_ACCESS_KEY"),
@@ -52,9 +49,6 @@ func main() {
 		log.Fatalf("r2 client: %v", err)
 	}
 
-	// Reset/clear commands: act, report, and exit WITHOUT starting the server.
-	// Ordering is significant -- metadata must not outlive its bytes (see
-	// --reset doc). These never run in the same process as serve.
 	if *reset {
 		*clearDB, *clearR2 = true, true
 	}
@@ -76,17 +70,13 @@ func main() {
 		return
 	}
 
-	// Repositories
 	devices := srv.NewDeviceRepository(db)
 	files := srv.NewFileRepository(db)
-	versions := srv.NewVersionRepository(db)
 
-	// Application + auth + transport
-	app := srv.NewSyncService(files, versions, devices, r2)
+	app := srv.NewSyncService(files, r2)
 	auth := srv.NewAuthInterceptor(devices)
 	service := srv.NewService(app, auth)
 
-	// gRPC server
 	lis, err := net.Listen("tcp", addr)
 	if err != nil {
 		log.Fatalf("listen %s: %v", addr, err)
@@ -107,18 +97,14 @@ func migrate(db *sql.DB) error {
 	stmts := []string{
 		srv.CreateDevicesTable,
 		srv.CreateFilesTable,
-		srv.CreateFileVersionsTable,
-		srv.CreateConflictsTable,
 		srv.CreateFilesPathIndex,
-		srv.CreateFileVersionsFileIndex,
 	}
 	for _, s := range stmts {
 		if _, err := db.ExecContext(context.Background(), s); err != nil {
 			return err
 		}
 	}
-	// Upgrade pre-tombstone databases.
-	return srv.MigrateFilesTable(db)
+	return nil
 }
 
 func getenv(k, def string) string {

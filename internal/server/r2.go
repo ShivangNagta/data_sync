@@ -13,7 +13,7 @@ import (
 )
 
 // Object key layout in R2:
-// uploads/<file_id>/<version_id>
+// files/<hash>  (content-addressed)
 
 type R2Client struct {
 	client *s3.Client
@@ -35,8 +35,8 @@ func NewR2Client(endpoint, accessKey, secretKey, bucket string) (*R2Client, erro
 	return &R2Client{client: svc, bucket: bucket}, nil
 }
 
-func (r *R2Client) Put(ctx context.Context, fileID, versionID string, data []byte) error {
-	key := fmt.Sprintf("uploads/%s/%s", fileID, versionID)
+func (r *R2Client) Put(ctx context.Context, hash string, data []byte) error {
+	key := fmt.Sprintf("files/%s", hash)
 	_, err := r.client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket: aws.String(r.bucket),
 		Key:    aws.String(key),
@@ -48,8 +48,8 @@ func (r *R2Client) Put(ctx context.Context, fileID, versionID string, data []byt
 	return nil
 }
 
-func (r *R2Client) Get(ctx context.Context, fileID, versionID string) ([]byte, error) {
-	key := fmt.Sprintf("uploads/%s/%s", fileID, versionID)
+func (r *R2Client) Get(ctx context.Context, hash string) ([]byte, error) {
+	key := fmt.Sprintf("files/%s", hash)
 	out, err := r.client.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(r.bucket),
 		Key:    aws.String(key),
@@ -66,8 +66,8 @@ func (r *R2Client) Get(ctx context.Context, fileID, versionID string) ([]byte, e
 	return buf.Bytes(), nil
 }
 
-func (r *R2Client) Delete(ctx context.Context, fileID, versionID string) error {
-	key := fmt.Sprintf("uploads/%s/%s", fileID, versionID)
+func (r *R2Client) Delete(ctx context.Context, hash string) error {
+	key := fmt.Sprintf("files/%s", hash)
 	_, err := r.client.DeleteObject(ctx, &s3.DeleteObjectInput{
 		Bucket: aws.String(r.bucket),
 		Key:    aws.String(key),
@@ -78,9 +78,6 @@ func (r *R2Client) Delete(ctx context.Context, fileID, versionID string) error {
 	return nil
 }
 
-// Clear removes every object in the bucket. R2 has no single "empty bucket"
-// call, so we paginate ListObjectsV2 and batch-delete (max 1000 keys per
-// request). Safe to call on an already-empty bucket.
 func (r *R2Client) Clear(ctx context.Context) error {
 	var keys []string
 	collect := func(objs []types.Object) {
@@ -91,7 +88,6 @@ func (r *R2Client) Clear(ctx context.Context) error {
 		}
 	}
 
-	// Page through the bucket collecting object keys.
 	paginator := s3.NewListObjectsV2Paginator(r.client, &s3.ListObjectsV2Input{
 		Bucket: aws.String(r.bucket),
 	})
@@ -103,7 +99,6 @@ func (r *R2Client) Clear(ctx context.Context) error {
 		collect(page.Contents)
 	}
 
-	// Batch-delete in chunks of 1000 (S3 API limit).
 	const batch = 1000
 	for i := 0; i < len(keys); i += batch {
 		end := i + batch
@@ -122,7 +117,6 @@ func (r *R2Client) Clear(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("r2 delete batch: %w", err)
 		}
-		// R2 returns errors per object in the response body; surface them.
 		if len(out.Errors) > 0 {
 			return fmt.Errorf("r2 delete batch had %d errors (e.g. %s: %s)",
 				len(out.Errors), strValue(out.Errors[0].Key), strValue(out.Errors[0].Message))

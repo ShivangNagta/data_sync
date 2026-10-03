@@ -8,45 +8,32 @@ import (
 	"fmt"
 )
 
-// SyncService is the business (application) layer.
-// It contains the sync rules and operates on domain types,
-// independent of the transport (gRPC) protocol.
 type SyncService struct {
-	files    *FileRepository
-	versions *VersionRepository
-	devices  *DeviceRepository
-	r2       *R2Client
+	files *FileRepository
+	r2    *R2Client
 }
 
-// NewSyncService constructs the application (business) layer.
-func NewSyncService(files *FileRepository, versions *VersionRepository, devices *DeviceRepository, r2 *R2Client) *SyncService {
-	return &SyncService{files: files, versions: versions, devices: devices, r2: r2}
+func NewSyncService(files *FileRepository, r2 *R2Client) *SyncService {
+	return &SyncService{files: files, r2: r2}
 }
 
-// SyncAction represents one directive in a sync plan.
 type SyncAction struct {
-	Path      string
-	Action    string // "upload", "download", "delete"
-	VersionID string
-	Hash      string
-	Size      int64
+	Path   string
+	Action string // "upload", "download", "delete"
+	Hash   string
+	Size   int64
 }
 
-// Uploader identifies the device performing the upload.
+type FileState struct {
+	Path string
+	Size int64
+	Hash string
+}
+
 type Uploader struct {
 	DeviceID string
 }
 
-// RegisterDevice creates a device and returns its ID and bearer token.
-func (s *SyncService) RegisterDevice(ctx context.Context, name, deviceID, token string) error {
-	if err := s.devices.RegisterDevice(ctx, deviceID, name, token); err != nil {
-		return fmt.Errorf("register device: %w", err)
-	}
-	return nil
-}
-
-// ComputeSyncPlan compares the client's manifest against server state
-// and returns what the client must upload, download, or delete.
 func (s *SyncService) ComputeSyncPlan(ctx context.Context, clientFiles map[string]FileState) ([]SyncAction, error) {
 	var actions []SyncAction
 
@@ -56,47 +43,26 @@ func (s *SyncService) ComputeSyncPlan(ctx context.Context, clientFiles map[strin
 			return nil, fmt.Errorf("get file: %w", err)
 		}
 
-		// The server doesn't know this file -> client should upload it.
 		if !exists {
 			actions = append(actions, SyncAction{Path: path, Action: "upload"})
 			continue
 		}
 
-		// The file was deleted on the server (tombstoned) but this client still
-		// has it -> the client should delete its local copy.
 		if serverFile.IsDeleted() {
 			actions = append(actions, SyncAction{Path: path, Action: "delete"})
 			continue
 		}
 
-		// If the server has a file but no version yet (e.g. an interrupted or
-		// orphaned upload), the client must upload to give it content.
-		head, hasVersion, err := s.versions.GetHeadVersion(ctx, serverFile.FileID)
-		if err != nil {
-			return nil, fmt.Errorf("get head version: %w", err)
-		}
-		if !hasVersion {
-			actions = append(actions, SyncAction{Path: path, Action: "upload"})
-			continue
-		}
-
-		// Compare content hash. If different, the server's head is
-		// ahead of the client -> client should download.
-		if head.RootHash != clientState.Hash {
+		if serverFile.Hash != clientState.Hash {
 			actions = append(actions, SyncAction{
-				Path:      path,
-				Action:    "download",
-				VersionID: head.VersionID,
-				Hash:      head.RootHash,
-				Size:      head.Size,
+				Path:   path,
+				Action: "download",
+				Hash:   serverFile.Hash,
+				Size:   serverFile.Size,
 			})
 		}
 	}
 
-	// Files the client doesn't know about yet (uploaded by other
-	// devices) must be downloaded. Without this, a new device only
-	// ever syncs files it already has locally and never receives
-	// files created on other devices.
 	serverFiles, err := s.files.ListAllFiles(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list server files: %w", err)
@@ -105,148 +71,67 @@ func (s *SyncService) ComputeSyncPlan(ctx context.Context, clientFiles map[strin
 		if _, known := clientFiles[sf.Path]; known {
 			continue
 		}
-		head, hasVersion, err := s.versions.GetHeadVersion(ctx, sf.FileID)
-		if err != nil {
-			return nil, fmt.Errorf("get head version: %w", err)
-		}
-		if !hasVersion {
-			// Orphaned files row with no content; nothing to pull.
-			continue
-		}
 		actions = append(actions, SyncAction{
-			Path:      sf.Path,
-			Action:    "download",
-			VersionID: head.VersionID,
-			Hash:      head.RootHash,
-			Size:      head.Size,
+			Path:   sf.Path,
+			Action: "download",
+			Hash:   sf.Hash,
+			Size:   sf.Size,
 		})
 	}
 
 	return actions, nil
 }
 
-// ApplyUpload stores a new version of a file. MVP uses last-writer-wins.
-// Returns the new version id and whether it superseded an existing head.
-func (s *SyncService) ApplyUpload(ctx context.Context, path string, data []byte, hash string, up Uploader) (versionID string, err error) {
-	// Integrity verification before any state change.
+func (s *SyncService) ApplyUpload(ctx context.Context, path string, data []byte, hash string) error {
 	if err := verifyHash(data, hash); err != nil {
-		return "", err
+		return err
 	}
 
-	found, exists, err := s.files.GetFileByPath(ctx, path)
-	if err != nil {
-		return "", fmt.Errorf("get file: %w", err)
+	if err := s.r2.Put(ctx, path, data); err != nil {
+		return fmt.Errorf("store in r2: %w", err)
 	}
 
-	var fileID, baseVersion string
-	if exists {
-		fileID = found.FileID
-		head, _, err := s.versions.GetHeadVersion(ctx, fileID)
-		if err != nil {
-			return "", fmt.Errorf("get head: %w", err)
-		}
-		baseVersion = head.VersionID
-	} else {
-		fileID = newID()
-		if err := s.files.CreateFile(ctx, fileID, path); err != nil {
-			return "", fmt.Errorf("create file: %w", err)
-		}
+	if err := s.files.UpsertFile(ctx, path, hash, int64(len(data))); err != nil {
+		return fmt.Errorf("upsert file: %w", err)
 	}
 
-	versionID = newID()
-
-	// Commit order: bytes to R2 first, then record version + advance head.
-	// ("upload bytes first, verify them, then advance the canonical version")
-	if err := s.r2.Put(ctx, fileID, versionID, data); err != nil {
-		return "", fmt.Errorf("store in r2: %w", err)
-	}
-
-	version := FileVersion{
-		VersionID:     versionID,
-		FileID:        fileID,
-		DeviceID:      up.DeviceID,
-		BaseVersionID: baseVersion,
-		Size:          int64(len(data)),
-		RootHash:      hash,
-	}
-	if err := s.versions.InsertVersion(ctx, version); err != nil {
-		return "", fmt.Errorf("record version: %w", err)
-	}
-	if err := s.files.SetCurrentVersion(ctx, fileID, versionID); err != nil {
-		return "", fmt.Errorf("set current version: %w", err)
-	}
-	// New content wins over a deletion: uploading the file resurrects it.
-	if err := s.files.ClearDeleted(ctx, fileID); err != nil {
-		return "", fmt.Errorf("clear deleted: %w", err)
-	}
-
-	return versionID, nil
+	return nil
 }
 
-// ApplyDelete tombstones a file so syncing clients remove their copies and a
-// new device never receives it. It is idempotent: deleting an unknown or
-// already-deleted file is a no-op. Last-write-wins: a subsequent upload (from
-// another device that edited the file while this deletion propagated) clears
-// the tombstone via ApplyUpload.
-func (s *SyncService) ApplyDelete(ctx context.Context, path, deviceID string) error {
+func (s *SyncService) ApplyDelete(ctx context.Context, path string) error {
 	found, exists, err := s.files.GetFileByPath(ctx, path)
 	if err != nil {
 		return fmt.Errorf("get file: %w", err)
 	}
 	if !exists || found.IsDeleted() {
-		// Nothing to do (unknown file or already tombstoned).
 		return nil
 	}
 
-	// Drop the current bytes from R2. Older versions remain orphaned; this is
-	// an accepted tradeoff until a per-file purge is implemented.
-	head, hasVersion, err := s.versions.GetHeadVersion(ctx, found.FileID)
-	if err != nil {
-		return fmt.Errorf("get head: %w", err)
-	}
-	if hasVersion {
-		if err := s.r2.Delete(ctx, found.FileID, head.VersionID); err != nil {
-			return fmt.Errorf("delete from r2: %w", err)
-		}
+	if err := s.r2.Delete(ctx, path); err != nil {
+		return fmt.Errorf("delete from r2: %w", err)
 	}
 
-	if err := s.files.MarkDeleted(ctx, found.FileID, deviceID); err != nil {
+	if err := s.files.MarkDeleted(ctx, path); err != nil {
 		return fmt.Errorf("mark deleted: %w", err)
 	}
 	return nil
 }
 
-// FetchFile retrieves the current bytes for a file path.
-func (s *SyncService) FetchFile(ctx context.Context, path string) (data []byte, versionID, hash string, size int64, err error) {
+func (s *SyncService) FetchFile(ctx context.Context, path string) (data []byte, hash string, size int64, err error) {
 	found, exists, err := s.files.GetFileByPath(ctx, path)
 	if err != nil {
-		return nil, "", "", 0, fmt.Errorf("get file: %w", err)
+		return nil, "", 0, fmt.Errorf("get file: %w", err)
 	}
 	if !exists {
-		return nil, "", "", 0, errors.New("file not found")
+		return nil, "", 0, errors.New("file not found")
 	}
 
-	head, hasVersion, err := s.versions.GetHeadVersion(ctx, found.FileID)
+	data, err = s.r2.Get(ctx, path)
 	if err != nil {
-		return nil, "", "", 0, fmt.Errorf("get head: %w", err)
-	}
-	if !hasVersion {
-		return nil, "", "", 0, errors.New("no version for file")
+		return nil, "", 0, fmt.Errorf("get from r2: %w", err)
 	}
 
-	data, err = s.r2.Get(ctx, found.FileID, head.VersionID)
-	if err != nil {
-		return nil, "", "", 0, fmt.Errorf("get from r2: %w", err)
-	}
-
-	return data, head.VersionID, head.RootHash, head.Size, nil
-}
-
-// FileState is a client-reported file in its manifest.
-type FileState struct {
-	Path string
-	Size int64
-	Hash string
+	return data, found.Hash, found.Size, nil
 }
 
 func verifyHash(data []byte, claim string) error {

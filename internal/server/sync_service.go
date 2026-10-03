@@ -10,9 +10,6 @@ import (
 	"github.com/shivangnagta/data_sync/proto/sync"
 )
 
-// SyncService is the gRPC transport (controller) layer.
-// It translates between proto messages and domain types, delegating
-// business logic to the application service. It stays thin.
 type Service struct {
 	sync.UnimplementedSyncServiceServer
 	app  *SyncService
@@ -23,22 +20,6 @@ func NewService(app *SyncService, auth *AuthInterceptor) *Service {
 	return &Service{app: app, auth: auth}
 }
 
-// RegisterDevice creates a device and returns its ID + bearer token.
-func (s *Service) RegisterDevice(ctx context.Context, req *sync.RegisterDeviceRequest) (*sync.RegisterDeviceResponse, error) {
-	deviceID := newID()
-	token := newToken()
-
-	if err := s.app.RegisterDevice(ctx, req.Name, deviceID, token); err != nil {
-		return nil, status.Errorf(codes.Internal, "register device: %v", err)
-	}
-
-	return &sync.RegisterDeviceResponse{
-		DeviceId: deviceID,
-		Token:    token,
-	}, nil
-}
-
-// GetSyncPlan delegates manifest comparison to the application layer.
 func (s *Service) GetSyncPlan(ctx context.Context, req *sync.GetSyncPlanRequest) (*sync.GetSyncPlanResponse, error) {
 	manifest := make(map[string]FileState, len(req.LocalFiles))
 	for _, f := range req.LocalFiles {
@@ -53,18 +34,16 @@ func (s *Service) GetSyncPlan(ctx context.Context, req *sync.GetSyncPlanRequest)
 	resp := &sync.GetSyncPlanResponse{}
 	for _, a := range actions {
 		resp.Actions = append(resp.Actions, &sync.SyncAction{
-			Path:      a.Path,
-			Action:    actionToProto(a.Action),
-			VersionId: a.VersionID,
-			Hash:      a.Hash,
-			Size:      a.Size,
+			Path:   a.Path,
+			Action: actionToProto(a.Action),
+			Hash:   a.Hash,
+			Size:   a.Size,
 		})
 	}
 
 	return resp, nil
 }
 
-// UploadFile accepts a streamed file and delegates storage to the app layer.
 func (s *Service) UploadFile(stream sync.SyncService_UploadFileServer) error {
 	var meta *sync.UploadFileMeta
 	var data []byte
@@ -90,25 +69,15 @@ func (s *Service) UploadFile(stream sync.SyncService_UploadFileServer) error {
 		return status.Error(codes.InvalidArgument, "missing upload metadata")
 	}
 
-	up, ok := UploaderFrom(stream.Context())
-	if !ok {
-		return status.Error(codes.Unauthenticated, "missing device identity")
-	}
-
-	versionID, err := s.app.ApplyUpload(stream.Context(), meta.Path, data, meta.Hash, up)
-	if err != nil {
+	if err := s.app.ApplyUpload(stream.Context(), meta.Path, data, meta.Hash); err != nil {
 		return status.Errorf(codes.Internal, "apply upload: %v", err)
 	}
 
-	return stream.SendAndClose(&sync.UploadFileResponse{
-		Accepted:     true,
-		NewVersionId: versionID,
-	})
+	return stream.SendAndClose(&sync.UploadFileResponse{Accepted: true})
 }
 
-// DownloadFile streams a file's bytes back to the client.
 func (s *Service) DownloadFile(req *sync.DownloadFileRequest, stream sync.SyncService_DownloadFileServer) error {
-	data, versionID, hash, size, err := s.app.FetchFile(stream.Context(), req.Path)
+	data, hash, size, err := s.app.FetchFile(stream.Context(), req.Path)
 	if err != nil {
 		return status.Errorf(codes.NotFound, "fetch file: %v", err)
 	}
@@ -116,10 +85,9 @@ func (s *Service) DownloadFile(req *sync.DownloadFileRequest, stream sync.SyncSe
 	if err := stream.Send(&sync.DownloadFileResponse{
 		Payload: &sync.DownloadFileResponse_Meta{
 			Meta: &sync.DownloadFileMeta{
-				Path:      req.Path,
-				VersionId: versionID,
-				Size:      size,
-				Hash:      hash,
+				Path: req.Path,
+				Size: size,
+				Hash: hash,
 			},
 		},
 	}); err != nil {
@@ -145,14 +113,8 @@ func (s *Service) DownloadFile(req *sync.DownloadFileRequest, stream sync.SyncSe
 	return nil
 }
 
-// DeleteFile tombstones a file server-side. Requires an authenticated device.
 func (s *Service) DeleteFile(ctx context.Context, req *sync.DeleteFileRequest) (*sync.DeleteFileResponse, error) {
-	up, ok := UploaderFrom(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "missing device identity")
-	}
-
-	if err := s.app.ApplyDelete(ctx, req.Path, up.DeviceID); err != nil {
+	if err := s.app.ApplyDelete(ctx, req.Path); err != nil {
 		return nil, status.Errorf(codes.Internal, "apply delete: %v", err)
 	}
 	return &sync.DeleteFileResponse{Deleted: true}, nil
