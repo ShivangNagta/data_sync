@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/shivangnagta/data_sync/internal/client/storage"
 )
@@ -17,6 +18,7 @@ type SyncEngine struct {
 	backend SyncBackend
 	token   string
 	db      *sql.DB
+	mu      sync.Mutex
 }
 
 var ignoredBase = map[string]bool{
@@ -38,6 +40,9 @@ func (e *SyncEngine) EventsURL() string {
 }
 
 func (e *SyncEngine) Sync(ctx context.Context, root string) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
 	ops, err := storage.GetPendingOps(e.db)
 	if err != nil {
 		return fmt.Errorf("get pending ops: %w", err)

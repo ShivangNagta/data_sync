@@ -285,6 +285,16 @@ async fn plan(sql: &SqlStorage, req: &mut Request) -> Result<Response> {
                     size: local.size,
                 });
             }
+            Some(remote)
+                if !local.last_seen_hash.is_empty() && local.last_seen_hash == local.hash =>
+            {
+                actions.push(SyncAction {
+                    path: local.path.clone(),
+                    action: "download",
+                    hash: remote.hash.clone(),
+                    size: remote.size,
+                });
+            }
             Some(remote) if local.hash.is_empty() => actions.push(SyncAction {
                 path: local.path.clone(),
                 action: "delete",

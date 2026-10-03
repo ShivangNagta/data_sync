@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"github.com/joho/godotenv"
 	_ "modernc.org/sqlite"
@@ -99,7 +100,15 @@ func main() {
 		}
 	})
 
-	select {}
+	interval := syncInterval()
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for range ticker.C {
+		if err := engine.Sync(ctx, folder); err != nil {
+			log.Printf("sync failed: %v", err)
+		}
+	}
+
 }
 
 func migrate(db *sql.DB) error {
@@ -122,6 +131,17 @@ func getenv(k, def string) string {
 		return v
 	}
 	return def
+}
+
+func syncInterval() time.Duration {
+	const defaultInterval = 2 * time.Second
+	value := getenv("SYNC_INTERVAL", defaultInterval.String())
+	interval, err := time.ParseDuration(value)
+	if err != nil || interval <= 0 {
+		log.Printf("invalid SYNC_INTERVAL %q; using %s", value, defaultInterval)
+		return defaultInterval
+	}
+	return interval
 }
 
 func getDuration(s string) int {
