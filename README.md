@@ -8,7 +8,7 @@ The actual README for the project is here - [MAIN.md](./MAIN.md)
 ```mermaid
 flowchart TB
     subgraph Client["Client Daemon (Go)"]
-        Watcher["fsnotify watcher<br/>(top-level dir only)"]
+        Watcher["fsnotify watcher<br/>(recursive)"]
         Reconcile["Startup reconcile<br/>(one-shot, recursive disk-vs-DB)"]
         LocalDB["SQLite DB<br/>local_files + pending_operations"]
         Manifest["DB-driven manifest<br/>(re-hash pending files only)"]

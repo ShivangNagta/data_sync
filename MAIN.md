@@ -36,7 +36,7 @@ flowchart TB
 
 ## How it works
 
-- **Client** watches a folder with fsnotify (top-level directory only). Every event is written to a local SQLite DB (`local_files` + `pending_operations`) as a create/modify/delete op, along with the file's size and SHA-256 hash.
+- **Client** watches a folder recursively with fsnotify. Every event is written to a local SQLite DB (`local_files` + `pending_operations`) as a create/modify/delete op, along with the file's size and SHA-256 hash.
 - At **startup** a one-shot, recursive reconcile walks disk vs DB to catch anything the watcher missed while the process was down.
 - On every **sync pass** (initially and every `SYNC_INTERVAL`, default `2s`) the client builds a *DB-driven manifest* (re-hashing only files with pending ops), sends it to the Worker, and executes the returned plan. A file with a pending local edit is always **uploaded, never overwritten** by a download or delete (client-push-wins).
 - Local deletions are propagated explicitly: the client commits a delete operation to the Worker, which stores a tombstone in Durable Object SQLite. The Worker then tells other clients to DELETE it, never offers a tombstoned file as a download, and new devices never receive it.
@@ -47,5 +47,5 @@ flowchart TB
 - Whole-file transfer; chunked upload + resumable is deferred.
 - First-writer-wins conflict detection uses each client's `last_seen_hash`.
 - Deletions propagate via Durable Object tombstones; tombstone garbage collection is deferred, so tombstones are kept forever.
-- Watcher is top-level only; subdirectories are covered by the startup reconcile and are tracked in TODO for recursive watching.
+- New directories are added to the watcher as they are created.
 - HTTP API and SSE connections are authenticated with a bearer token.

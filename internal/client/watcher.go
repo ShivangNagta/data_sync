@@ -44,11 +44,20 @@ func NewWatcher(db *sql.DB, folder string) (*Watcher, error) {
 }
 
 // Starts the fsnotify event watching for the folder
-// TODO: Add recursive watching
 func (w *Watcher) Start() error {
-	err := w.fswatch.Add(w.folder)
+	err := filepath.WalkDir(w.folder, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			if err := w.fswatch.Add(path); err != nil {
+				return fmt.Errorf("watch %s: %w", path, err)
+			}
+		}
+		return nil
+	})
 	if err != nil {
-		return fmt.Errorf("add folder to watch: %w", err)
+		return fmt.Errorf("add folder tree to watch: %w", err)
 	}
 
 	go w.watchEvents()
@@ -79,6 +88,11 @@ func (w *Watcher) watchEvents() {
 		// Android's FUSE fs emits create/write events for dirs; skip them so
 		// RecordChange doesn't try to hash a directory.
 		if fi, err := os.Stat(event.Name); err == nil && fi.IsDir() {
+			if opType == "create" {
+				if err := w.fswatch.Add(event.Name); err != nil {
+					fmt.Printf("Error watching directory %s: %v\n", event.Name, err)
+				}
+			}
 			continue
 		}
 
