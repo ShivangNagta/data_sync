@@ -1,3 +1,5 @@
+use futures_channel::mpsc::unbounded;
+use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::JsValue;
 use worker::*;
@@ -39,7 +41,37 @@ async fn events(req: Request, ctx: RouteContext<()>) -> Result<Response> {
     }
     let namespace = ctx.durable_object("SYNC_NAMESPACE")?;
     let stub = namespace.id_from_name("default")?.get_stub()?;
-    stub.fetch_with_request(req).await
+    let mut internal = Request::new("https://sync.internal/ws", Method::Get)?;
+    internal.headers_mut()?.set("upgrade", "websocket")?;
+    let response = stub.fetch_with_request(internal).await?;
+    let socket = response
+        .websocket()
+        .ok_or_else(|| Error::RustError("Durable Object did not open events".into()))?;
+    socket.accept()?;
+
+    let (sender, receiver) = unbounded::<Vec<u8>>();
+    wasm_bindgen_futures::spawn_local(async move {
+        let _ = sender.unbounded_send(b"data: connected\n\n".to_vec());
+        if let Ok(mut events) = socket.events() {
+            while let Some(Ok(event)) = events.next().await {
+                if let WebsocketEvent::Message(message) = event {
+                    if let Some(text) = message.text() {
+                        let payload = format!("data: {text}\n\n").into_bytes();
+                        if sender.unbounded_send(payload).is_err() {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    let headers = Headers::new();
+    headers.set("Content-Type", "text/event-stream")?;
+    headers.set("Cache-Control", "no-cache")?;
+    Response::builder()
+        .with_headers(headers)
+        .from_stream(receiver.map(Ok::<Vec<u8>, Error>))
 }
 
 async fn sync_commit(mut req: Request, ctx: RouteContext<()>) -> Result<Response> {
@@ -151,7 +183,7 @@ impl DurableObject for SyncNamespace {
         )?;
 
         match req.path().as_str() {
-            "/v2/events" => {
+            "/ws" => {
                 let pair = WebSocketPair::new()?;
                 self.state.accept_web_socket(&pair.server);
                 Response::from_websocket(pair.client)

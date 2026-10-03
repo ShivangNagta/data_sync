@@ -13,7 +13,8 @@ Go implementation remains the v1 reference and is not modified by this project.
   download, delete, or conflict actions.
 - `POST /v2/sync/commit` accepts an upload or delete mutation and applies
   first-writer-wins compare-and-swap using `last_seen_hash`.
-- `GET /v2/events` upgrades to a WebSocket and receives
+- `GET /v2/events` opens an authenticated Server-Sent Events stream and
+  receives
   `{ "path": "...", "type": "change" }` or `{ "path": "...", "type": "delete" }`
   after a successful commit.
 - `SyncNamespace` stores file metadata in SQLite. The current namespace is
