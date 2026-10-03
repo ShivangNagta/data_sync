@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/shivangnagta/data_sync/internal/client/storage"
 	"github.com/shivangnagta/data_sync/proto/sync"
@@ -16,6 +17,16 @@ import (
 type SyncEngine struct {
 	client *SyncClient
 	db     *sql.DB
+}
+
+var ignoredBase = map[string]bool{
+	".ds_store": true,
+}
+
+func isIgnored(rel string) bool {
+	base := filepath.Base(rel)
+	return strings.HasPrefix(base, ".sync-tmp-") ||
+		ignoredBase[strings.ToLower(base)]
 }
 
 func NewSyncEngine(c *SyncClient, db *sql.DB) *SyncEngine {

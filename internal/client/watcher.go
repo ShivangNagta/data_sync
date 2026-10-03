@@ -71,7 +71,7 @@ func (w *Watcher) watchEvents() {
 			continue
 		}
 		rel = filepath.ToSlash(rel)
-		// Ignore our own temp files and platform junk (see ignore.go).
+		// Ignore our own temp files and platform junk.
 		if isIgnored(rel) {
 			continue
 		}
