@@ -11,10 +11,11 @@ import (
 type SyncService struct {
 	files *FileRepository
 	r2    *R2Client
+	hub   *Hub
 }
 
-func NewSyncService(files *FileRepository, r2 *R2Client) *SyncService {
-	return &SyncService{files: files, r2: r2}
+func NewSyncService(files *FileRepository, r2 *R2Client, hub *Hub) *SyncService {
+	return &SyncService{files: files, r2: r2, hub: hub}
 }
 
 type SyncAction struct {
@@ -104,6 +105,8 @@ func (s *SyncService) ApplyUpload(ctx context.Context, path string, data []byte,
 		return fmt.Errorf("upsert file: %w", err)
 	}
 
+	BroadcastFileChange(s.hub, path)
+
 	return nil
 }
 
@@ -123,6 +126,9 @@ func (s *SyncService) ApplyDelete(ctx context.Context, path string) error {
 	if err := s.files.MarkDeleted(ctx, path); err != nil {
 		return fmt.Errorf("mark deleted: %w", err)
 	}
+
+	BroadcastFileChange(s.hub, path)
+
 	return nil
 }
 

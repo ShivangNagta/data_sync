@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"time"
 
 	"github.com/joho/godotenv"
 	_ "modernc.org/sqlite"
@@ -88,7 +87,6 @@ func main() {
 		return
 	}
 
-	// Daemon mode: watch for local changes and sync periodically.
 	w, err := client.NewWatcher(db, folder)
 	if err != nil {
 		log.Fatalf("watcher: %v", err)
@@ -97,21 +95,18 @@ func main() {
 		log.Fatalf("start watcher: %v", err)
 	}
 
-	// Initial sync on startup.
 	if err := engine.Sync(ctx, folder); err != nil {
 		log.Printf("initial sync failed: %v", err)
 	}
 
-	// Sync periodically so changes from other devices propagate.
-	interval := time.Duration(getDuration(getenv("SYNC_INTERVAL", "30"))) * time.Second
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	for range ticker.C {
+	httpURL := getenv("SYNC_HTTP", "http://localhost:8080")
+	go engine.ListenEvents(ctx, httpURL, func() {
 		if err := engine.Sync(ctx, folder); err != nil {
 			log.Printf("sync failed: %v", err)
 		}
-	}
+	})
+
+	select {}
 }
 
 func migrate(db *sql.DB) error {

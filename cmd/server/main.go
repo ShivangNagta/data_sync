@@ -6,6 +6,7 @@ import (
 	"flag"
 	"log"
 	"net"
+	"net/http"
 	"os"
 
 	"github.com/joho/godotenv"
@@ -71,9 +72,23 @@ func main() {
 	}
 
 	files := srv.NewFileRepository(db)
-	app := srv.NewSyncService(files, r2)
+	hub := srv.NewHub()
+	app := srv.NewSyncService(files, r2, hub)
 	auth := srv.NewAuthInterceptor()
 	service := srv.NewService(app, auth)
+
+	go func() {
+		mux := http.NewServeMux()
+		mux.Handle("/events", hub)
+		mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+			w.Write([]byte("ok"))
+		})
+		httpAddr := getenv("HTTP_LISTEN", ":8080")
+		log.Printf("http server listening on %s", httpAddr)
+		if err := http.ListenAndServe(httpAddr, mux); err != nil {
+			log.Fatalf("http server: %v", err)
+		}
+	}()
 
 	lis, err := net.Listen("tcp", addr)
 	if err != nil {
