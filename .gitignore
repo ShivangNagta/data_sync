@@ -13,3 +13,6 @@ cmd/synctest/
 sync_token.json
 worker/
 .archify
+rust_server/.wrangler/
+rust_server/target/
+rust_server/build/

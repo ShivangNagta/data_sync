@@ -1,0 +1,22 @@
+name = "data-sync-cloudflare"
+main = "build/index.js"
+compatibility_date = "2026-10-03"
+
+[build]
+command = "cargo install -q \"worker-build@^0.8\" && worker-build --release"
+
+[durable_objects]
+bindings = [
+  { name = "SYNC_NAMESPACE", class_name = "SyncNamespace" }
+]
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["SyncNamespace"]
+
+[[r2_buckets]]
+binding = "FILES"
+bucket_name = "data-sync-files-v2"
+
+[vars]
+# Set SYNC_TOKEN as a secret with `wrangler secret put SYNC_TOKEN`.
