@@ -7,38 +7,42 @@ The actual README for the project is here - [MAIN.md](./MAIN.md)
 
 ```mermaid
 flowchart TB
-    subgraph Client["Client Daemon (Go)"]
-        Watcher["fsnotify watcher<br/>(top-level dir only)"]
+    subgraph Clients["Go CLI clients"]
+        Mac["macOS client<br/>launchd user service"]
+        Android["Android client<br/>Termux / --once"]
+        IPad["iPad client<br/>iSH / --once"]
+    end
+
+    subgraph Client["Shared client engine"]
+        Watcher["fsnotify watcher<br/>(recursive where supported)"]
         Reconcile["Startup reconcile<br/>(one-shot, recursive disk-vs-DB)"]
         LocalDB["SQLite DB<br/>local_files + pending_operations"]
         Manifest["DB-driven manifest<br/>(re-hash pending files only)"]
-        SyncEngine["Sync Engine<br/>(ticker, every SYNC_INTERVAL)"]
+        SyncEngine["Event-driven sync engine"]
 
-        Watcher -->|"RecordChange"| LocalDB
+        Watcher -->|"record local change"| LocalDB
         Reconcile -->|"record create/modify/delete"| LocalDB
         LocalDB --> Manifest
         Manifest --> SyncEngine
     end
 
-    subgraph Server["Go Sync Server"]
-        Auth["AuthInterceptor<br/>(bearer token, RegisterDevice exempt)"]
-        Transport["Service (gRPC transport)"]
-        App["SyncService (business)<br/>ComputeSyncPlan / ApplyUpload / FetchFile"]
-        Repos["FileRepository<br/>VersionRepository, DeviceRepository"]
-        R2Client["R2Client"]
+    subgraph Worker["Cloudflare Worker (Rust/WASM)"]
+        API["Authenticated HTTP/JSON API"]
+        DurableObject["Durable Object<br/>SQLite metadata + coordination"]
+        R2["Cloudflare R2<br/>content-addressed file bytes"]
+        Events["Authenticated SSE"]
 
-        Auth --> Transport
-        Transport --> App
-        App --> Repos
-        App --> R2Client
+        API --> DurableObject
+        API --> R2
+        DurableObject --> Events
     end
 
-    Turso["Turso metadata DB"]
-    R2["Cloudflare R2<br/>uploads/<file_id>/<version_id>"]
+    Mac --> Client
+    Android --> Client
+    IPad --> Client
 
-    SyncEngine <-->|"GetSyncPlan /<br/>UploadFile / DownloadFile"| Auth
-    Repos <-->|"metadata"| Turso
-    R2Client <-->|"bytes"| R2
+    SyncEngine <-->|"sync plan, commits,<br/>file bytes"| API
+    SyncEngine <-->|"remote change events"| Events
 ```
 
 ## License

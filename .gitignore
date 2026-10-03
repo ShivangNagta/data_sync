@@ -15,3 +15,4 @@ worker/
 rust_server/.wrangler/
 rust_server/target/
 rust_server/build/
+sync-client

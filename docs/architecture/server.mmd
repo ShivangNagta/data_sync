@@ -1,20 +1,20 @@
 flowchart LR
-    subgraph Server["Go Sync Server"]
+    subgraph Worker["Cloudflare Worker (Rust/WASM)"]
         direction TB
-        Auth["AuthInterceptor<br/>unary + stream interceptors,<br/>bearer token via metadata,<br/>RegisterDevice exempt"]
-        Transport["Service (gRPC transport)<br/>proto <-> domain mapping,<br/>thin/stateless"]
-        App["SyncService (business)<br/>RegisterDevice, ComputeSyncPlan,<br/>ApplyUpload, FetchFile"]
-        Repos["Repositories<br/>FileRepository, VersionRepository,<br/>DeviceRepository"]
-        R2Client["R2Client"]
+        Auth["Bearer authentication<br/>SYNC_TOKEN secret"]
+        API["HTTP/JSON routes<br/>files, sync plan, sync commit, events"]
+        Namespace["Durable Object namespace<br/>default coordination instance"]
+        SQLite["Durable Object SQLite<br/>file metadata + tombstones"]
+        R2Client["R2 binding<br/>content-addressed objects"]
+        SSE["SSE stream<br/>remote change notifications"]
 
-        Auth --> Transport
-        Transport --> App
-        App --> Repos
-        App --> R2Client
+        Auth --> API
+        API --> Namespace
+        Namespace --> SQLite
+        API --> R2Client
+        SQLite --> SSE
     end
 
-    Turso["Turso metadata DB<br/>(devices, files,<br/>file_versions, conflicts)"]
-    R2["Cloudflare R2<br/>uploads/<file_id>/<version_id>"]
-
-    Repos <-->|"metadata"| Turso
-    R2Client <-->|"bytes (Put/Get/Delete)"| R2
+    Client["Go CLI clients"] <-->|"HTTPS JSON + file bytes"| Auth
+    Client <-->|"authenticated SSE"| SSE
+    R2["Cloudflare R2<br/>files/<sha256>"] <-->|"Put/Get/Delete"| R2Client

@@ -6,31 +6,41 @@ A self-hosted file storage and synchronization system similar to iCloud. Local-f
 
 ```mermaid
 flowchart TB
-    subgraph Client["Client Daemon (Go)"]
-        Watcher["fsnotify watcher<br/>(recursive)"]
+    subgraph Clients["Go CLI clients"]
+        Mac["macOS client<br/>launchd user service"]
+        Android["Android client<br/>Termux / --once"]
+        IPad["iPad client<br/>iSH / --once"]
+    end
+
+    subgraph Client["Shared client engine"]
+        Watcher["fsnotify watcher<br/>(recursive where supported)"]
         Reconcile["Startup reconcile<br/>(one-shot, recursive disk-vs-DB)"]
         LocalDB["SQLite DB<br/>local_files + pending_operations"]
         Manifest["DB-driven manifest<br/>(re-hash pending files only)"]
-        SyncEngine["Sync Engine<br/>(event-triggered)"]
+        SyncEngine["Event-driven sync engine"]
 
-        Watcher -->|"RecordChange"| LocalDB
+        Watcher -->|"record local change"| LocalDB
         Reconcile -->|"record create/modify/delete"| LocalDB
         LocalDB --> Manifest
         Manifest --> SyncEngine
     end
 
-    subgraph Worker["Rust Cloudflare Worker"]
-        API["HTTP/JSON API<br/>(bearer token)"]
+    subgraph Worker["Cloudflare Worker (Rust/WASM)"]
+        API["Authenticated HTTP/JSON API"]
         DurableObject["Durable Object<br/>SQLite metadata + coordination"]
-        R2Client["R2 object storage"]
+        R2["Cloudflare R2<br/>content-addressed file bytes"]
         Events["Authenticated SSE"]
 
         API --> DurableObject
-        API --> R2Client
+        API --> R2
         DurableObject --> Events
     end
 
-    SyncEngine <-->|"JSON sync plan/commit<br/>and file bytes"| API
+    Mac --> Client
+    Android --> Client
+    IPad --> Client
+
+    SyncEngine <-->|"sync plan, commits,<br/>file bytes"| API
     SyncEngine <-->|"change events"| Events
 ```
 
