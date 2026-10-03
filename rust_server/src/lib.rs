@@ -11,6 +11,7 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         .put_async("/v2/files/:hash", upload)
         .get_async("/v2/files/:hash", download)
         .delete_async("/v2/files/:hash", delete)
+        .get_async("/v2/events", events)
         .post_async("/v2/sync/plan", sync_plan)
         .post_async("/v2/sync/commit", sync_commit)
         .on_async("/v2/*path", |req, ctx| async move {
@@ -30,6 +31,15 @@ async fn sync_plan(mut req: Request, ctx: RouteContext<()>) -> Result<Response> 
         return Response::error("unauthorized", 401);
     }
     forward_to_namespace(&mut req, &ctx, "/v2/sync/plan").await
+}
+
+async fn events(req: Request, ctx: RouteContext<()>) -> Result<Response> {
+    if !authorize(&req, &ctx)? {
+        return Response::error("unauthorized", 401);
+    }
+    let namespace = ctx.durable_object("SYNC_NAMESPACE")?;
+    let stub = namespace.id_from_name("default")?.get_stub()?;
+    stub.fetch_with_request(req).await
 }
 
 async fn sync_commit(mut req: Request, ctx: RouteContext<()>) -> Result<Response> {
@@ -141,8 +151,13 @@ impl DurableObject for SyncNamespace {
         )?;
 
         match req.path().as_str() {
+            "/v2/events" => {
+                let pair = WebSocketPair::new()?;
+                self.state.accept_web_socket(&pair.server);
+                Response::from_websocket(pair.client)
+            }
             "/v2/sync/plan" => plan(&sql, &mut req).await,
-            "/v2/sync/commit" => commit(&sql, &mut req).await,
+            "/v2/sync/commit" => commit(&self.state, &sql, &mut req).await,
             _ => Response::error("not found", 404),
         }
     }
@@ -272,7 +287,7 @@ async fn plan(sql: &SqlStorage, req: &mut Request) -> Result<Response> {
     Response::from_json(&PlanResponse { actions })
 }
 
-async fn commit(sql: &SqlStorage, req: &mut Request) -> Result<Response> {
+async fn commit(state: &State, sql: &SqlStorage, req: &mut Request) -> Result<Response> {
     let input: CommitRequest = req.json().await?;
     let current: Option<StoredFile> = sql
         .exec(
@@ -296,8 +311,9 @@ async fn commit(sql: &SqlStorage, req: &mut Request) -> Result<Response> {
         sql.exec(
             "INSERT INTO files(path, hash, size, deleted) VALUES (?, ?, 0, 1)
              ON CONFLICT(path) DO UPDATE SET hash = excluded.hash, size = 0, deleted = 1",
-            vec![input.path.into(), input.hash.into()],
+            vec![input.path.clone().into(), input.hash.into()],
         )?;
+        broadcast(state, &input.path, "delete");
         return Response::from_json(&CommitResponse {
             accepted: true,
             conflict: false,
@@ -322,14 +338,22 @@ async fn commit(sql: &SqlStorage, req: &mut Request) -> Result<Response> {
         "INSERT INTO files(path, hash, size, deleted) VALUES (?, ?, ?, 0)
          ON CONFLICT(path) DO UPDATE SET hash = excluded.hash, size = excluded.size, deleted = 0",
         vec![
-            input.path.into(),
+            input.path.clone().into(),
             input.hash.clone().into(),
             input.size.into(),
         ],
     )?;
+    broadcast(state, &input.path, "change");
     Response::from_json(&CommitResponse {
         accepted: true,
         conflict: false,
         current_hash: input.hash,
     })
+}
+
+fn broadcast(state: &State, path: &str, event_type: &str) {
+    let event = serde_json::json!({ "path": path, "type": event_type }).to_string();
+    for socket in state.get_websockets() {
+        let _ = socket.send_with_str(&event);
+    }
 }
