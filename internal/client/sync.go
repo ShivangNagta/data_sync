@@ -15,8 +15,10 @@ import (
 )
 
 type SyncEngine struct {
-	client *SyncClient
-	db     *sql.DB
+	client  *SyncClient
+	backend SyncBackend
+	token   string
+	db      *sql.DB
 }
 
 var ignoredBase = map[string]bool{
@@ -30,7 +32,15 @@ func isIgnored(rel string) bool {
 }
 
 func NewSyncEngine(c *SyncClient, db *sql.DB) *SyncEngine {
-	return &SyncEngine{client: c, db: db}
+	return &SyncEngine{client: c, backend: c.Backend(), token: c.Token, db: db}
+}
+
+func NewHTTPBackendEngine(backend *HTTPBackend, db *sql.DB) *SyncEngine {
+	return &SyncEngine{backend: backend, token: backend.Token, db: db}
+}
+
+func (e *SyncEngine) EventsURL() string {
+	return e.backend.EventsURL()
 }
 
 func (e *SyncEngine) Sync(ctx context.Context, root string) error {
@@ -59,13 +69,13 @@ func (e *SyncEngine) Sync(ctx context.Context, root string) error {
 		req.LocalFiles = append(req.LocalFiles, f)
 	}
 
-	resp, err := e.client.API().GetSyncPlan(e.client.AuthContext(ctx), req)
+	actions, err := e.backend.GetSyncPlan(ctx, req.LocalFiles)
 	if err != nil {
 		return fmt.Errorf("get sync plan: %w", err)
 	}
 
-	fmt.Printf("sync: plan has %d action(s) for %d local file(s)\n", len(resp.Actions), len(req.LocalFiles))
-	for _, action := range resp.Actions {
+	fmt.Printf("sync: plan has %d action(s) for %d local file(s)\n", len(actions), len(req.LocalFiles))
+	for _, action := range actions {
 		fmt.Printf("sync: %s %s\n", action.Action, action.Path)
 		switch action.Action {
 		case sync.SyncAction_UPLOAD:
@@ -141,23 +151,7 @@ func (e *SyncEngine) upload(ctx context.Context, root, path string) error {
 		return err
 	}
 
-	stream, err := e.client.API().UploadFile(e.client.AuthContext(ctx))
-	if err != nil {
-		return err
-	}
-	if err := stream.Send(&sync.UploadFileRequest{
-		Payload: &sync.UploadFileRequest_Meta{
-			Meta: &sync.UploadFileMeta{Path: path, Size: size, Hash: hash, LastSeenHash: lastSeenHash},
-		},
-	}); err != nil {
-		return err
-	}
-	if err := stream.Send(&sync.UploadFileRequest{
-		Payload: &sync.UploadFileRequest_Data{Data: content},
-	}); err != nil {
-		return err
-	}
-	resp, err := stream.CloseAndRecv()
+	resp, err := e.backend.Upload(ctx, &sync.UploadFileMeta{Path: path, Size: size, Hash: hash, LastSeenHash: lastSeenHash}, content)
 	if err != nil {
 		return err
 	}
@@ -169,7 +163,7 @@ func (e *SyncEngine) upload(ctx context.Context, root, path string) error {
 
 func (e *SyncEngine) download(ctx context.Context, root string, action *sync.SyncAction) error {
 	full := filepath.Join(root, filepath.FromSlash(action.Path))
-	stream, err := e.client.API().DownloadFile(e.client.AuthContext(ctx), &sync.DownloadFileRequest{Path: action.Path})
+	stream, err := e.backend.Download(ctx, action)
 	if err != nil {
 		return err
 	}
@@ -185,21 +179,9 @@ func (e *SyncEngine) download(ctx context.Context, root string, action *sync.Syn
 	tmpName := tmp.Name()
 	defer os.Remove(tmpName)
 
-	for {
-		msg, err := stream.Recv()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			tmp.Close()
-			return err
-		}
-		if d, ok := msg.Payload.(*sync.DownloadFileResponse_Data); ok {
-			if _, err := tmp.Write(d.Data); err != nil {
-				tmp.Close()
-				return err
-			}
-		}
+	if _, err := io.Copy(tmp, stream); err != nil {
+		tmp.Close()
+		return err
 	}
 
 	if err := tmp.Close(); err != nil {
@@ -291,9 +273,9 @@ func (e *SyncEngine) StartupScan(root string) error {
 }
 
 func (e *SyncEngine) deleteRemote(ctx context.Context, path string) error {
-	_, err := e.client.API().DeleteFile(
-		e.client.AuthContext(ctx),
-		&sync.DeleteFileRequest{Path: path},
-	)
-	return err
+	lastSeenHash, err := storage.GetLastSeenHash(e.db, path)
+	if err != nil {
+		return err
+	}
+	return e.backend.Delete(ctx, path, lastSeenHash)
 }

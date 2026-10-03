@@ -11,9 +11,9 @@ import (
 )
 
 type SyncClient struct {
-	conn   *grpc.ClientConn
-	api    sync.SyncServiceClient
-	Token  string
+	conn  *grpc.ClientConn
+	api   sync.SyncServiceClient
+	Token string
 }
 
 type ClientConfig struct {
@@ -39,3 +39,5 @@ func (c *SyncClient) AuthContext(ctx context.Context) context.Context {
 }
 
 func (c *SyncClient) API() sync.SyncServiceClient { return c.api }
+
+func (c *SyncClient) Backend() SyncBackend { return grpcBackend{client: c} }
