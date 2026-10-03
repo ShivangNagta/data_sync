@@ -1,6 +1,7 @@
 use futures_channel::mpsc::unbounded;
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use wasm_bindgen::JsValue;
 use worker::*;
 
@@ -163,11 +164,12 @@ fn authorized(req: &Request, expected: &str) -> Result<bool> {
 #[durable_object]
 pub struct SyncNamespace {
     state: State,
+    env: Env,
 }
 
 impl DurableObject for SyncNamespace {
-    fn new(state: State, _env: Env) -> Self {
-        Self { state }
+    fn new(state: State, env: Env) -> Self {
+        Self { state, env }
     }
 
     async fn fetch(&self, mut req: Request) -> Result<Response> {
@@ -189,7 +191,7 @@ impl DurableObject for SyncNamespace {
                 Response::from_websocket(pair.client)
             }
             "/v2/sync/plan" => plan(&sql, &mut req).await,
-            "/v2/sync/commit" => commit(&self.state, &sql, &mut req).await,
+            "/v2/sync/commit" => commit(&self.state, &self.env, &sql, &mut req).await,
             _ => Response::error("not found", 404),
         }
     }
@@ -329,7 +331,7 @@ async fn plan(sql: &SqlStorage, req: &mut Request) -> Result<Response> {
     Response::from_json(&PlanResponse { actions })
 }
 
-async fn commit(state: &State, sql: &SqlStorage, req: &mut Request) -> Result<Response> {
+async fn commit(state: &State, env: &Env, sql: &SqlStorage, req: &mut Request) -> Result<Response> {
     let input: CommitRequest = req.json().await?;
     let current: Option<StoredFile> = sql
         .exec(
@@ -355,6 +357,7 @@ async fn commit(state: &State, sql: &SqlStorage, req: &mut Request) -> Result<Re
              ON CONFLICT(path) DO UPDATE SET hash = excluded.hash, size = 0, deleted = 1",
             vec![input.path.clone().into(), input.hash.into()],
         )?;
+        cleanup_orphaned_objects(env, sql).await?;
         broadcast(state, &input.path, "delete");
         return Response::from_json(&CommitResponse {
             accepted: true,
@@ -385,12 +388,53 @@ async fn commit(state: &State, sql: &SqlStorage, req: &mut Request) -> Result<Re
             input.size.into(),
         ],
     )?;
+    cleanup_orphaned_objects(env, sql).await?;
     broadcast(state, &input.path, "change");
     Response::from_json(&CommitResponse {
         accepted: true,
         conflict: false,
         current_hash: input.hash,
     })
+}
+
+async fn cleanup_orphaned_objects(env: &Env, sql: &SqlStorage) -> Result<()> {
+    #[derive(Deserialize)]
+    struct ActiveHash {
+        hash: String,
+    }
+
+    let active_hashes: HashSet<String> = sql
+        .exec("SELECT hash FROM files WHERE deleted = 0", None)?
+        .to_array::<ActiveHash>()?
+        .into_iter()
+        .map(|row| row.hash)
+        .collect();
+
+    let bucket = env.bucket("FILES")?;
+    let mut listing = bucket.list().prefix("files/").execute().await?;
+    loop {
+        for object in listing.objects() {
+            let key = object.key();
+            let hash = key.strip_prefix("files/").unwrap_or(&key);
+            if !active_hashes.contains(hash) {
+                bucket.delete(key).await?;
+            }
+        }
+
+        if !listing.truncated() {
+            break;
+        }
+        let cursor = listing
+            .cursor()
+            .ok_or_else(|| Error::RustError("R2 listing was truncated without a cursor".into()))?;
+        listing = bucket
+            .list()
+            .prefix("files/")
+            .cursor(cursor)
+            .execute()
+            .await?;
+    }
+    Ok(())
 }
 
 fn broadcast(state: &State, path: &str, event_type: &str) {

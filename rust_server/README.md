@@ -20,6 +20,8 @@ project's only sync backend.
 - `SyncNamespace` stores file metadata in SQLite. The current namespace is
   named `default`; namespace partitioning can be added when authentication
   supports multiple users.
+- After each accepted upload or delete commit, the Worker removes every R2
+  object under `files/` that is not referenced by an active metadata row.
 
 Example commit:
 
