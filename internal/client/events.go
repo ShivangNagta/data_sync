@@ -68,7 +68,7 @@ func (e *SyncEngine) connectEvents(ctx context.Context, httpURL string, onChange
 		if err := json.Unmarshal([]byte(data), &event); err != nil {
 			continue
 		}
-		if event.Type == "change" {
+		if event.Type == "change" || event.Type == "delete" {
 			onChange()
 		}
 	}
