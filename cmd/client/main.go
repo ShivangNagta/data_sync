@@ -5,9 +5,10 @@ import (
 	"database/sql"
 	"flag"
 	"log"
+	"net"
 	"os"
 	"path/filepath"
-	"strconv"
+	"time"
 
 	"github.com/joho/godotenv"
 	_ "modernc.org/sqlite"
@@ -17,6 +18,18 @@ import (
 )
 
 func main() {
+	// On Android, the DNS stopped getting resolved for some reason. There is 
+	// no /etc/resolv.conf file there, so it fallbacks to the proxy resolver
+	// at 53, which is also not listening. Curl in termux works fine, as it uses the
+	// standard library (Bionic instead of libc) functions for resolving. But my
+	// GO binary is statically built, so it does not use it.
+	// The current fix is to just update the Golang's default resolver logic
+	// to use some hardcoded DNS resolver addresses like that of Google and Cloudflare
+	if _, err := os.Stat("/etc/resolv.conf"); err != nil {
+		setupResolver()
+	}
+
+
 	_ = godotenv.Load()
 
 	once := flag.Bool("once", false, "run a single sync cycle then exit")
@@ -128,7 +141,23 @@ func getenv(k, def string) string {
 	return def
 }
 
-func getDuration(s string) int {
-	n, _ := strconv.ParseInt(s, 10, 64)
-	return int(n)
+func setupResolver() {
+	servers := []string{"8.8.8.8:53", "1.1.1.1:53"};
+	net.DefaultResolver = &net.Resolver{
+		PreferGo: true,
+		Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
+			var lastErr error
+			for _, s := range servers {
+				d := net.Dialer{Timeout: 3 * time.Second};
+				c, err := d.DialContext(ctx, network, s)
+				if err == nil {
+					return c, nil
+				}
+				lastErr = err
+			}
+			return nil, lastErr
+		},
+	}
+
 }
+ 
