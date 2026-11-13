@@ -1,0 +1,9 @@
+.venv-flet/
+.flet/
+build/
+dist/
+__pycache__/
+*.py[cod]
+*.apk
+*.aab
+.DS_Store
