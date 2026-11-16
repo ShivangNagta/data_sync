@@ -16,3 +16,10 @@ rust_server/.wrangler/
 rust_server/target/
 rust_server/build/
 sync-client
+python_worker/__pycache__/
+python_worker/.venv/
+python_worker/.venv-workers/
+python_worker/python_modules/
+python_worker/.wrangler/
+python_worker/src/js-stubs/
+.wrangler

@@ -1,0 +1,25 @@
+name = "data-sync-python"
+main = "entry.py"
+compatibility_date = "2026-10-08"
+compatibility_flags = ["python_workers"]
+
+[vars]
+# Set SYNC_TOKEN with: uv run pywrangler secret put SYNC_TOKEN
+
+[[d1_databases]]
+binding = "DB"
+database_name = "data-sync-metadata-python"
+database_id = "fbe4ff79-dedc-4cd9-be82-dbe3f034eacf"
+
+[[r2_buckets]]
+binding = "FILES"
+bucket_name = "data-sync-files-v2"
+
+[durable_objects]
+bindings = [
+  { name = "EVENTS", class_name = "EventHub" }
+]
+
+[exports.EventHub]
+type = "durable-object"
+storage = "sqlite"

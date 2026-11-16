@@ -25,15 +25,17 @@ flowchart TB
         Manifest --> SyncEngine
     end
 
-    subgraph Worker["Cloudflare Worker (Rust/WASM)"]
+    subgraph Worker["Cloudflare Worker (Python)"]
         API["Authenticated HTTP/JSON API"]
-        DurableObject["Durable Object<br/>SQLite metadata + coordination"]
+        D1["D1<br/>file metadata"]
         R2["Cloudflare R2<br/>content-addressed file bytes"]
+        EventHub["Durable Object<br/>notification fanout"]
         Events["Authenticated SSE"]
 
-        API --> DurableObject
+        API --> D1
         API --> R2
-        DurableObject --> Events
+        API --> EventHub
+        EventHub --> Events
     end
 
     Mac --> Client
@@ -48,18 +50,22 @@ flowchart TB
 
 - **Client** watches a folder recursively with fsnotify. Every event is written to a local SQLite DB (`local_files` + `pending_operations`) as a create/modify/delete op, along with the file's size and SHA-256 hash.
 - At **startup** a one-shot, recursive reconcile walks disk vs DB to catch anything the watcher missed while the process was down.
-- On every **sync pass** (initially and after each local filesystem event) the client builds a *DB-driven manifest* (re-hashing only files with pending ops), sends it to the Worker, and executes the returned plan. A file with a pending local edit is always **uploaded, never overwritten** by a download or delete (client-push-wins).
-- Local deletions are propagated explicitly: the client commits a delete operation to the Worker, which stores a tombstone in Durable Object SQLite. The Worker then tells other clients to DELETE it, never offers a tombstoned file as a download, and new devices never receive it.
-- The **Rust Worker** computes the plan by comparing the client's manifest against Durable Object SQLite metadata. Bytes go to R2 under content-addressed keys, so files are immutable and deduplicated. Upload and download are whole-file HTTP transfers written atomically on the client.
-- After each accepted upload or delete commit, the Worker removes R2 objects that are no longer referenced by active metadata, so old file versions do not accumulate.
+- On every **sync pass** (initially and after each local filesystem event) the client builds a *DB-driven manifest* (re-hashing only files with pending ops), sends it to the Worker, and executes the returned plan. The manifest's `last_seen_hash` lets the planner distinguish a local edit from an unchanged local file; no separate local-change field is required.
+- Local deletions are propagated explicitly: the Python Worker stores a tombstone in D1 and publishes a notification through the EventHub Durable Object. The Worker then tells other clients to DELETE it, never offers a tombstoned file as a download, and new devices never receive it.
+- The **Python Worker** computes the plan by comparing the client's manifest against D1 metadata. Bytes go to the shared R2 bucket under content-addressed keys, so files are immutable and deduplicated. Upload and download are whole-file HTTP transfers written atomically on the client.
+- Commits use **last-commit-wins** semantics: the latest accepted upload or delete replaces the current D1 metadata. The EventHub Durable Object is used only for live notification fanout, not as the metadata store.
 
 ## Current scope / known gaps
 
 - Whole-file transfer; chunked upload + resumable is deferred.
-- First-writer-wins conflict detection uses each client's `last_seen_hash`.
-- Deletions propagate via Durable Object tombstones; tombstone garbage collection is deferred, so tombstones are kept forever.
+- The Python Worker uses last-commit-wins; the legacy Rust Worker still uses first-writer-wins.
+- Deletions propagate via D1 tombstones; tombstone garbage collection is deferred, so tombstones are kept forever.
 - New directories are added to the watcher as they are created.
 - HTTP API and SSE connections are authenticated with a bearer token.
+- The Python Worker is deployed separately at
+  `https://data-sync-python.shivangnag.workers.dev` while the Rust Worker remains available for rollback.
+- The migration uses a clean D1 metadata database and the existing `data-sync-files-v2` R2 bucket. Existing server metadata and blobs were intentionally discarded; clients must re-upload local files.
+- D1 schema creation currently runs on first request and should later be replaced with a migration.
 
 ## Personal deployment and development notes
 
@@ -78,7 +84,7 @@ Set the same dedicated random token in `.env` that is configured as the
 Worker's `SYNC_TOKEN` secret:
 
 ```env
-SYNC_HTTP=https://data-sync-cloudflare.shivang.workers.dev
+SYNC_HTTP=https://data-sync-python.shivangnag.workers.dev
 SYNC_TOKEN=your-dedicated-sync-token
 SYNC_FOLDER=./data
 SYNC_DB=./data-sync.db
@@ -133,12 +139,13 @@ data/android/sync-client-arm64
 data/ipad/sync-client-ipad
 ```
 
-### Run the Worker locally
+### Run the Python Worker locally
 
-Run Wrangler from the repository root through the Makefile:
+Run the Python Worker from its directory:
 
 ```sh
-make worker-dev
+cd python_worker
+uv run pywrangler dev --local --port 8787 --var SYNC_TOKEN:dev-token
 ```
 
 Then temporarily use this endpoint in `.env`:
@@ -160,7 +167,7 @@ Expected response:
 ok
 ```
 
-### Deploy the Worker
+### Deploy the Python Worker
 
 Authenticate Wrangler once:
 
@@ -168,42 +175,32 @@ Authenticate Wrangler once:
 wrangler login
 ```
 
-Create the R2 bucket if it does not exist:
-
-```sh
-cd rust_server
-wrangler r2 bucket create data-sync-files-v2
-```
-
 Configure the production token without placing it in source code:
 
 ```sh
-wrangler secret put SYNC_TOKEN
+cd python_worker
+uv run pywrangler secret put SYNC_TOKEN
 ```
 
 Deploy:
 
 ```sh
-make worker-deploy
+uv run pywrangler deploy
 ```
 
 The Worker configuration is in
-[rust_server/wrangler.toml](./rust_server/wrangler.toml). The Worker uses
-Durable Object SQLite for metadata and coordination, R2 for file bytes, and
-authenticated SSE for change notifications.
+[python_worker/wrangler.toml](./python_worker/wrangler.toml). The Worker uses
+D1 for metadata, the existing R2 bucket for file bytes, a minimal Durable
+Object for notification fanout, and authenticated SSE for change notifications.
+`uv` is used by the Python Worker toolchain to resolve and deploy dependencies;
+it is not installed or run by the deployed Worker.
 
 ### Inspect local development data
 
-Wrangler stores local R2 and Durable Object state under:
+Wrangler stores local Python Worker R2, D1, and Durable Object state under:
 
 ```text
-rust_server/.wrangler/state/v3/
-```
-
-The Durable Object SQLite files are under:
-
-```text
-rust_server/.wrangler/state/v3/do/
+python_worker/.wrangler/state/v3/
 ```
 
 The directory is ignored by Git. Stop Wrangler before making manual changes to
