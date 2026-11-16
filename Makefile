@@ -26,14 +26,13 @@ setup-env:
 	@echo "Created .env from .env.example; set SYNC_TOKEN before running the client."
 
 worker-check:
-	cargo fmt --manifest-path rust_server/Cargo.toml --check
-	cargo check --manifest-path rust_server/Cargo.toml
+	python3 -m unittest discover -s python_worker -p 'test_*.py'
 
 worker-dev:
-	cd rust_server && wrangler dev --local --port 8787
+	cd python_worker && uv run pywrangler dev --local --port 8787 --var SYNC_TOKEN:dev-token
 
 worker-secret:
-	cd rust_server && wrangler secret put SYNC_TOKEN
+	cd python_worker && uv run pywrangler secret put SYNC_TOKEN
 
-worker-deploy:j
-	cd rust_server && wrangler deploy
+worker-deploy:
+	cd python_worker && uv run pywrangler deploy

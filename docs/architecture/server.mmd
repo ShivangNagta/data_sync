@@ -1,18 +1,18 @@
 flowchart LR
-    subgraph Worker["Cloudflare Worker (Rust/WASM)"]
+    subgraph Worker["Cloudflare Worker (Python)"]
         direction TB
         Auth["Bearer authentication<br/>SYNC_TOKEN secret"]
         API["HTTP/JSON routes<br/>files, sync plan, sync commit, events"]
-        Namespace["Durable Object namespace<br/>default coordination instance"]
-        SQLite["Durable Object SQLite<br/>file metadata + tombstones"]
+        D1["D1<br/>file metadata + tombstones"]
+        EventHub["Durable Object<br/>notification fanout"]
         R2Client["R2 binding<br/>content-addressed objects"]
         SSE["SSE stream<br/>remote change notifications"]
 
         Auth --> API
-        API --> Namespace
-        Namespace --> SQLite
+        API --> D1
+        API --> EventHub
         API --> R2Client
-        SQLite --> SSE
+        EventHub --> SSE
     end
 
     Client["Go CLI clients"] <-->|"HTTPS JSON + file bytes"| Auth

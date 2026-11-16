@@ -18,15 +18,17 @@ flowchart TB
         Manifest --> SyncEngine
     end
 
-    subgraph Worker["Cloudflare Worker (Rust/WASM)"]
+    subgraph Worker["Cloudflare Worker (Python)"]
         API["Authenticated HTTP/JSON API"]
-        DurableObject["Durable Object<br/>SQLite metadata + coordination"]
+        D1["D1<br/>file metadata"]
         R2["Cloudflare R2<br/>content-addressed file bytes"]
+        EventHub["Durable Object<br/>notification fanout"]
         Events["Authenticated SSE"]
 
-        API --> DurableObject
+        API --> D1
         API --> R2
-        DurableObject --> Events
+        API --> EventHub
+        EventHub --> Events
     end
 
     Mac --> Client

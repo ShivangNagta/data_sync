@@ -58,12 +58,12 @@ flowchart TB
 ## Current scope / known gaps
 
 - Whole-file transfer; chunked upload + resumable is deferred.
-- The Python Worker uses last-commit-wins; the legacy Rust Worker still uses first-writer-wins.
+- The Python Worker uses last-commit-wins.
 - Deletions propagate via D1 tombstones; tombstone garbage collection is deferred, so tombstones are kept forever.
 - New directories are added to the watcher as they are created.
 - HTTP API and SSE connections are authenticated with a bearer token.
-- The Python Worker is deployed separately at
-  `https://data-sync-python.shivangnag.workers.dev` while the Rust Worker remains available for rollback.
+- The Python Worker is deployed at
+  `https://data-sync-python.shivangnag.workers.dev`.
 - The migration uses a clean D1 metadata database and the existing `data-sync-files-v2` R2 bucket. Existing server metadata and blobs were intentionally discarded; clients must re-upload local files.
 - D1 schema creation currently runs on first request and should later be replaced with a migration.
 

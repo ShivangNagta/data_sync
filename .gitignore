@@ -12,9 +12,6 @@ cmd/synctest/
 sync_token.json
 worker/
 .archify
-rust_server/.wrangler/
-rust_server/target/
-rust_server/build/
 sync-client
 python_worker/__pycache__/
 python_worker/.venv/
