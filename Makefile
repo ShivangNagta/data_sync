@@ -1,6 +1,7 @@
 .PHONY: test build-client build_android_client build_ipad_client \
         run-client run-client-once \
-        worker-check worker-dev worker-secret worker-deploy setup-env
+        worker-check worker-format worker-format-check worker-lint \
+        worker-dev worker-secret worker-deploy setup-env
 
 test:
 	go test ./...
@@ -25,7 +26,16 @@ setup-env:
 	@test -f .env || cp .env.example .env
 	@echo "Created .env from .env.example; set SYNC_TOKEN before running the client."
 
-worker-check:
+worker-format:
+	cd python_worker && uv run ruff format .
+
+worker-format-check:
+	cd python_worker && uv run ruff format --check .
+
+worker-lint:
+	cd python_worker && uv run ruff check .
+
+worker-check: worker-format-check worker-lint
 	python3 -m unittest discover -s python_worker -p 'test_*.py'
 
 worker-dev:

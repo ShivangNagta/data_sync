@@ -185,9 +185,7 @@ class Default(WorkerEntrypoint):
         )
 
     def _authorized(self, request: Request) -> bool:
-        return request.headers.get("Authorization") == (
-            f"Bearer {self.env.SYNC_TOKEN}"
-        )
+        return request.headers.get("Authorization") == (f"Bearer {self.env.SYNC_TOKEN}")
 
     @staticmethod
     def _path(request: Request) -> str:

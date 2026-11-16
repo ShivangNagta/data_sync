@@ -45,21 +45,17 @@ class CommitResponse:
 
 
 class MetadataStore(Protocol):
-    async def list_files(self) -> list[StoredFile]:
-        ...
+    async def list_files(self) -> list[StoredFile]: ...
 
-    async def upsert_file(self, file: StoredFile) -> None:
-        ...
+    async def upsert_file(self, file: StoredFile) -> None: ...
 
 
 class BlobStore(Protocol):
-    async def exists(self, content_hash: str) -> bool:
-        ...
+    async def exists(self, content_hash: str) -> bool: ...
 
 
 class EventPublisher(Protocol):
-    async def publish(self, path: str, event_type: str) -> None:
-        ...
+    async def publish(self, path: str, event_type: str) -> None: ...
 
 
 def build_plan(
@@ -74,18 +70,14 @@ def build_plan(
         remote = remote_by_path.get(local.path)
         if remote is None:
             if local.hash:
-                actions.append(
-                    SyncAction(local.path, "upload", local.hash, local.size)
-                )
+                actions.append(SyncAction(local.path, "upload", local.hash, local.size))
             continue
 
         if remote.deleted:
             if not local.hash:
                 continue
             if local.has_local_change():
-                actions.append(
-                    SyncAction(local.path, "upload", local.hash, local.size)
-                )
+                actions.append(SyncAction(local.path, "upload", local.hash, local.size))
             else:
                 actions.append(SyncAction(local.path, "delete"))
             continue
@@ -93,20 +85,14 @@ def build_plan(
         if remote.hash == local.hash:
             continue
         if local.has_local_change():
-            actions.append(
-                SyncAction(local.path, "upload", local.hash, local.size)
-            )
+            actions.append(SyncAction(local.path, "upload", local.hash, local.size))
         else:
-            actions.append(
-                SyncAction(local.path, "download", remote.hash, remote.size)
-            )
+            actions.append(SyncAction(local.path, "download", remote.hash, remote.size))
 
     for remote in remote_files:
         if remote.deleted or remote.path in local_by_path:
             continue
-        actions.append(
-            SyncAction(remote.path, "download", remote.hash, remote.size)
-        )
+        actions.append(SyncAction(remote.path, "download", remote.hash, remote.size))
 
     return actions
 

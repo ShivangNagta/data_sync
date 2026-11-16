@@ -18,7 +18,7 @@ import (
 )
 
 func main() {
-	// On Android, the DNS stopped getting resolved for some reason. There is 
+	// On Android, the DNS stopped getting resolved for some reason. There is
 	// no /etc/resolv.conf file there, so it fallbacks to the proxy resolver
 	// at 53, which is also not listening. Curl in termux works fine, as it uses the
 	// standard library (Bionic instead of libc) functions for resolving. But my
@@ -28,7 +28,6 @@ func main() {
 	if _, err := os.Stat("/etc/resolv.conf"); err != nil {
 		setupResolver()
 	}
-
 
 	_ = godotenv.Load()
 
@@ -142,13 +141,13 @@ func getenv(k, def string) string {
 }
 
 func setupResolver() {
-	servers := []string{"8.8.8.8:53", "1.1.1.1:53"};
+	servers := []string{"8.8.8.8:53", "1.1.1.1:53"}
 	net.DefaultResolver = &net.Resolver{
 		PreferGo: true,
 		Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
 			var lastErr error
 			for _, s := range servers {
-				d := net.Dialer{Timeout: 3 * time.Second};
+				d := net.Dialer{Timeout: 3 * time.Second}
 				c, err := d.DialContext(ctx, network, s)
 				if err == nil {
 					return c, nil
@@ -160,4 +159,3 @@ func setupResolver() {
 	}
 
 }
- 

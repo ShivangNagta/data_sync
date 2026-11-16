@@ -40,8 +40,9 @@ class D1MetadataStore(MetadataStore):
         ]
 
     async def upsert_file(self, file: StoredFile) -> None:
-        await self._database.prepare(
-            """
+        await (
+            self._database.prepare(
+                """
             INSERT INTO files(path, hash, size, deleted)
             VALUES (?, ?, ?, ?)
             ON CONFLICT(path) DO UPDATE SET
@@ -49,12 +50,15 @@ class D1MetadataStore(MetadataStore):
                 size = excluded.size,
                 deleted = excluded.deleted
             """
-        ).bind(
-            file.path,
-            file.hash,
-            file.size,
-            int(file.deleted),
-        ).run()
+            )
+            .bind(
+                file.path,
+                file.hash,
+                file.size,
+                int(file.deleted),
+            )
+            .run()
+        )
 
 
 class R2BlobStore(BlobStore):

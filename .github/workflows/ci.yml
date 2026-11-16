@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    name: Go tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Check Go formatting
+        run: |
+          files="$(gofmt -l .)"
+          if [ -n "$files" ]; then
+            echo "The following Go files need gofmt:"
+            echo "$files"
+            exit 1
+          fi
+      - name: Run Go tests
+        run: go test ./...
+
+  python-worker:
+    name: Python Worker checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: python_worker/uv.lock
+      - name: Install Python Worker dependencies
+        run: uv sync --locked --directory python_worker
+      - name: Check formatting
+        run: uv run --project python_worker ruff format --check python_worker
+      - name: Run Ruff
+        run: uv run --project python_worker ruff check python_worker
+      - name: Run Python tests
+        run: uv run --project python_worker python -m unittest discover -s python_worker -p 'test_*.py'
+      - name: Compile Python files
+        run: uv run --project python_worker python -m py_compile python_worker/*.py
